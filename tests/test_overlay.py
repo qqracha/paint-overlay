@@ -61,7 +61,7 @@ class OverlayTests(BaseOverlay):
     def test_native_ribbon_and_palette(self):
         a=self.app
         self.assertFalse(hasattr(a.dock,'background'))
-        self.assertEqual(a.dock.size(),m.C.QSize(899,77))
+        self.assertEqual(a.dock.size(),m.C.QSize(1349,139))
         self.assertEqual(len(a.panel.colors),6)
         self.assertTrue(all(s.orientation()==m.C.Qt.Horizontal for s in a.panel.sliders.values()))
         a.dock.tool_buttons['ellipse'].click()
@@ -152,6 +152,19 @@ class PaintWorkflowTests(BaseOverlay):
             m.u=Keys; a.leave_layer=lambda:exits.append(True)
             a.tick(); self.assertFalse(exits); self.assertTrue(a.overlay.shield)
         finally:m.u=real; a.leave_layer=original_leave
+    def test_toast_draws_readable_title_and_details(self):
+        toast=self.app.capture_toast
+        image=toast.grab().toImage()
+        for area in (m.C.QRect(20,13,340,28),m.C.QRect(20,45,340,25)):
+            dark=sum(1 for y in range(area.top(),area.bottom()) for x in range(area.left(),area.right()) if image.pixelColor(x,y).red()<90 and image.pixelColor(x,y).green()<110 and image.pixelColor(x,y).alpha()>100)
+            self.assertGreater(dark,150)
+    def test_hud_fits_smaller_displays(self):
+        dock=self.app.dock
+        try:
+            dock.fit_to_screen(m.C.QRect(0,0,1024,768))
+            self.assertLessEqual(dock.width(),992)
+            self.assertTrue(all(dock.rect().contains(button.geometry()) for button in dock.hotspots))
+        finally:dock.fit_to_screen(m.C.QRect(0,0,1920,1080))
     def test_font_popup_does_not_commit_text_prematurely(self):
         a=self.app; a.cfg['shield']=True; a.open_text(m.C.QPointF(30,40)); editor=a.text_editor; a.editor_wait_release=False
         real=m.u; original_popup=m.W.QApplication.activePopupWidget; original_pos=m.G.QCursor.pos
@@ -181,10 +194,13 @@ class PaintWorkflowTests(BaseOverlay):
         self.assertEqual(result.pixelColor(100,100).name(),'#ff0000')
         self.assertEqual(a.capture_screen_image(first).pixelColor(50,50).name(),'#335577')
     def test_capture_copies_png_and_notifies(self):
-        a=self.app
+        a=self.app; case=self
+        probe=m.W.QWidget(None,m.C.Qt.Tool); probe.setFixedSize(60,40); probe.show()
+        a.dock.show(); a.capture_toast.show()
         class Screen:
             def geometry(self):return m.C.QRect(0,0,400,400)
             def grabWindow(self,window):
+                case.assertFalse(any(w.isVisible() for w in m.W.QApplication.topLevelWidgets()))
                 pix=m.G.QPixmap(400,400); pix.fill(m.G.QColor('#335577')); return pix
         screen=Screen(); original_target=a.capture_target; original_notify=a.capture_toast.notify
         original_path=m.C.QStandardPaths.writableLocation; original_warning=m.W.QMessageBox.warning
@@ -193,10 +209,11 @@ class PaintWorkflowTests(BaseOverlay):
             a.capture_target=lambda:screen; a.capture_toast.notify=lambda target:notifications.append(target)
             m.C.QStandardPaths.writableLocation=lambda location:sandbox.name
             m.W.QMessageBox.warning=lambda *args:errors.append(args)
-            a.screenshot(); loop=m.C.QEventLoop(); m.C.QTimer.singleShot(450,loop.quit); loop.exec()
+            a.screenshot(); loop=m.C.QEventLoop(); m.C.QTimer.singleShot(600,loop.quit); loop.exec()
             self.assertFalse(errors); self.assertFalse(a.capturing)
             self.assertTrue(a.last_screenshot.exists()); self.assertEqual(self.qt.clipboard().image().size(),m.C.QSize(400,400)); self.assertEqual(notifications,[screen])
         finally:
+            probe.close()
             a.capture_target=original_target; a.capture_toast.notify=original_notify
             m.C.QStandardPaths.writableLocation=original_path; m.W.QMessageBox.warning=original_warning
     def test_no_pointer_glow_and_aligned_active_tool(self):

@@ -1,5 +1,5 @@
 #define AppName "Paint Overlay"
-#define AppVersion "2.1.0"
+#define AppVersion "2.1.1"
 [Setup]
 AppId={{7D336D42-658B-4967-B2A9-797102AFF3DC}
 AppName={#AppName}
@@ -22,7 +22,7 @@ MinVersion=10.0
 CloseApplications=yes
 RestartApplications=no
 AppMutex=Local\PaintOverlay.App,Local\JustPointer.App
-VersionInfoVersion=2.1.0.0
+VersionInfoVersion=2.1.1.0
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"

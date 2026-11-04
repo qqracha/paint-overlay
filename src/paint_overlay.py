@@ -636,6 +636,7 @@ class App:
             self.overlay.checkpoint(); painter=G.QPainter(self.overlay.image); painter.translate(editor.anchor); document.drawContents(painter); painter.end()
             self.drawing_tool='select'; self.overlay.selection=C.QRectF(editor.anchor,document.size()); self.last_draw_global=self.overlay.mapToGlobal(editor.anchor.toPoint()); self.overlay.update()
         editor.deleteLater(); self.gesture=None; self.previous=None
+        self.keys['esc']=True
         self.dock.refresh()
         if refresh:self.apply_mode()
     def selection_hit(self,point):

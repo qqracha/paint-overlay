@@ -140,6 +140,18 @@ class PaintWorkflowTests(BaseOverlay):
         self.assertIsNone(a.text_editor); self.assertTrue(a.layer_shortcuts_active)
         rect=a.overlay.selection.toAlignedRect()
         self.assertTrue(any(bytes(a.overlay.image.copy(rect).constBits())))
+    def test_escape_cancels_text_without_leaving_layer(self):
+        a=self.app; a.cfg['shield']=True; a.open_text(m.C.QPointF(30,40))
+        a.text_editor.edit.setPlainText('Cancel'); a.text_editor.cancel_key.activated.emit()
+        self.assertIsNone(a.text_editor)
+        real=m.u; original_leave=a.leave_layer; exits=[]
+        class Keys:
+            @staticmethod
+            def GetAsyncKeyState(key):return 0x8000 if key==0x1B else 0
+        try:
+            m.u=Keys; a.leave_layer=lambda:exits.append(True)
+            a.tick(); self.assertFalse(exits); self.assertTrue(a.overlay.shield)
+        finally:m.u=real; a.leave_layer=original_leave
     def test_font_popup_does_not_commit_text_prematurely(self):
         a=self.app; a.cfg['shield']=True; a.open_text(m.C.QPointF(30,40)); editor=a.text_editor; a.editor_wait_release=False
         real=m.u; original_popup=m.W.QApplication.activePopupWidget; original_pos=m.G.QCursor.pos

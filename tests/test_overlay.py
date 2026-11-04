@@ -140,6 +140,19 @@ class PaintWorkflowTests(BaseOverlay):
         self.assertIsNone(a.text_editor); self.assertTrue(a.layer_shortcuts_active)
         rect=a.overlay.selection.toAlignedRect()
         self.assertTrue(any(bytes(a.overlay.image.copy(rect).constBits())))
+    def test_font_popup_does_not_commit_text_prematurely(self):
+        a=self.app; a.cfg['shield']=True; a.open_text(m.C.QPointF(30,40)); editor=a.text_editor; a.editor_wait_release=False
+        real=m.u; original_popup=m.W.QApplication.activePopupWidget; original_pos=m.G.QCursor.pos
+        class Keys:
+            @staticmethod
+            def GetAsyncKeyState(key):return 0x8000 if key==1 else 0
+        try:
+            m.u=Keys; m.W.QApplication.activePopupWidget=lambda:editor
+            m.G.QCursor.pos=lambda:m.C.QPoint(2000,2000)
+            a.tick(); self.assertIs(a.text_editor,editor)
+        finally:
+            m.u=real; m.W.QApplication.activePopupWidget=original_popup; m.G.QCursor.pos=original_pos
+            a.finish_text(False)
     def test_capture_is_single_monitor_at_native_resolution(self):
         a=self.app
         class Screen:

@@ -628,6 +628,7 @@ class App:
         editor=self.text_editor
         if editor is None:return
         self.text_editor=None; editor.hide()
+        editor.size.interpretText()
         text=editor.edit.toPlainText()
         if commit and text.strip():
             document=G.QTextDocument(); document.setDocumentMargin(0); document.setDefaultFont(editor.current_font()); document.setPlainText(text); document.setTextWidth(editor.edit.viewport().width())
@@ -713,6 +714,7 @@ class App:
         if self.capturing or W.QApplication.activeModalWidget() is not None:return
         key=lambda k:bool(u.GetAsyncKeyState(k)&0x8000)
         if self.text_editor is not None:
+            if W.QApplication.activePopupWidget() is not None:return
             if not key(1):self.editor_wait_release=False
             if key(1) and not self.editor_wait_release and not self.text_editor.frameGeometry().contains(G.QCursor.pos()):self.finish_text(True)
             return

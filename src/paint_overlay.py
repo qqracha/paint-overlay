@@ -276,6 +276,12 @@ class HUD(PalettePanelBase):
             preview=W.QLabel(); preview.setFixedSize(28,32); row.addWidget(preview); self.previews[key]=preview
             slider=SizeSlider(steps); slider.setFixedWidth(72); slider.setToolTip('Кисть' if key=='width' else 'Ластик'); slider.sizeChanged.connect(lambda v,k=key:owner.set_value(k,v)); row.addWidget(slider); self.sliders[key]=slider
             value=W.QLabel(); value.setFixedWidth(24); value.setAlignment(C.Qt.AlignCenter); row.addWidget(value); self.values[key]=value
+        divider=W.QFrame(); divider.setFrameShape(W.QFrame.VLine); divider.setFixedHeight(24); divider.setStyleSheet('color:#dbe3ef;'); row.addWidget(divider)
+        for key,title in [('line','Линия · Shift: шаг 45°'),('rect','Прямоугольник · Shift: квадрат'),('ellipse','Эллипс · Shift: круг'),('triangle','Треугольник')]:
+            button=W.QPushButton(); button.setIcon(action_icon(key)); button.setIconSize(C.QSize(20,20)); button.setFixedSize(28,30); button.setCheckable(True)
+            button.setStyleSheet('QPushButton {padding:0;} QPushButton:checked {background:#dceafb;border:1px solid #6096d4;}'); button.setToolTip(title)
+            button.clicked.connect(lambda checked=False,k=key:owner.select_tool(k)); row.addWidget(button); self.tool_buttons[key]=button
+        divider=W.QFrame(); divider.setFrameShape(W.QFrame.VLine); divider.setFixedHeight(24); divider.setStyleSheet('color:#dbe3ef;'); row.addWidget(divider)
         for kind,tip,callback in [('undo','Отменить · Ctrl+Z',owner.undo),('redo','Повторить · Ctrl+Shift+Z',owner.redo),('clear','Очистить · Ctrl+Alt+E',owner.clear),('camera','Снимок · Ctrl+Alt+S',owner.screenshot)]:
             button=W.QPushButton(); button.setIcon(action_icon(kind)); button.setIconSize(C.QSize(21,21)); button.setFixedSize(30,30); button.setStyleSheet('padding:0;'); button.setToolTip(tip); button.clicked.connect(callback); row.addWidget(button); self.actions[kind]=button
         tools=W.QPushButton('⋯'); tools.setFixedSize(30,30); tools.setToolTip('Инструменты'); tools.clicked.connect(self.tool_menu); row.addWidget(tools)

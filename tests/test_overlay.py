@@ -62,11 +62,12 @@ class OverlayTests(BaseOverlay):
         a=self.app
         self.assertFalse(hasattr(a.dock,'background'))
         self.assertEqual(a.dock.height(),54)
-        self.assertLess(a.dock.width(),800)
+        self.assertLess(a.dock.width(),900)
         self.assertEqual(len(a.panel.colors),6)
         self.assertTrue(all(s.orientation()==m.C.Qt.Horizontal for s in a.panel.sliders.values()))
-        a.select_tool('ellipse')
+        a.dock.tool_buttons['ellipse'].click()
         self.assertEqual(a.drawing_tool,'ellipse')
+        self.assertTrue(a.dock.tool_buttons['ellipse'].isChecked())
     def test_history_hold_repeat(self):
         a=self.app; oldclock=a.history_clock; oldshield=a.overlay.shield
         class Clock:

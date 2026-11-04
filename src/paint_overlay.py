@@ -190,7 +190,8 @@ class GlassPanel(W.QWidget):
         return super().eventFilter(obj,event)
     def mouseMoveEvent(self,event):self.glass_light=event.position(); self.update(); super().mouseMoveEvent(event)
     def paintEvent(self,event):
-        painter=G.QPainter(self); paint_glass(painter,self.rect(),getattr(self,'glass_light',None))
+        painter=G.QPainter(self); painter.setCompositionMode(G.QPainter.CompositionMode_Source); painter.fillRect(self.rect(),C.Qt.transparent); painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
+        paint_glass(painter,self.rect(),getattr(self,'glass_light',None))
 
 class PalettePanelBase(GlassPanel):
     def refresh(self):
@@ -302,7 +303,8 @@ class HUD(GlassPanel):
         for key,b in self.tool_buttons.items():b.setChecked(key==self.owner.drawing_tool)
         self.update()
     def paintEvent(self,event):
-        p=G.QPainter(self); p.setRenderHint(G.QPainter.Antialiasing); p.setRenderHint(G.QPainter.TextAntialiasing)
+        p=G.QPainter(self); p.setCompositionMode(G.QPainter.CompositionMode_Source); p.fillRect(self.rect(),C.Qt.transparent); p.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
+        p.setRenderHint(G.QPainter.Antialiasing); p.setRenderHint(G.QPainter.TextAntialiasing)
         p.scale(self.ui_scale,self.ui_scale)
         light=getattr(self,'glass_light',None)
         paint_glass(p,C.QRectF(0,0,675,48),light/self.ui_scale if light else None)

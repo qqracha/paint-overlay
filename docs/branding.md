@@ -13,3 +13,5 @@ The ribbon uses Qt painting and application-owned icon drawing code. No screensh
 ## Glass material
 
 The glass appearance is inspired by [Apple HIG Materials](https://developer.apple.com/design/human-interface-guidelines/materials). This is not Apple's native Liquid Glass runtime. On Windows 11, the application requests [DWMSBT_TRANSIENTWINDOW / Desktop Acrylic](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type), paints translucent gradients and specular edges, and renders icons directly with QPainter. Older Windows versions use a translucent fallback. No backdrop screenshot is cached or exported by the glass effect.
+
+The non-activating HUD prefers Windows composition blur with custom translucent glass tint. Desktop Acrylic is retained as a fallback. Geometry reveal animation avoids layered-window opacity, which can force an opaque backdrop on tool windows. The glass was visually checked over a synthetic colored background; the background in docs/glass-demo.png contains no user desktop content.

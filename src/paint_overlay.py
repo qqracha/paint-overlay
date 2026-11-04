@@ -88,7 +88,7 @@ class SizeSlider(W.QSlider):
 
 def draw_action(p,kind):
     p.save(); p.setRenderHint(G.QPainter.Antialiasing)
-    p.setPen(G.QPen(G.QColor('#50627b'),1.8,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
+    p.setPen(G.QPen(G.QColor('#20354d'),1.8,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
     if kind=='paste':
         p.setBrush(G.QColor('#e4edf8')); p.drawRoundedRect(C.QRectF(5,5,14,17),2,2)
         p.setBrush(G.QColor('#ffffff')); p.drawRoundedRect(C.QRectF(8,2,8,5),1,1)
@@ -105,7 +105,7 @@ def draw_action(p,kind):
         p.setBrush(G.QColor('#dce8f6')); p.drawPolygon(G.QPolygonF([C.QPointF(4,10),C.QPointF(11,3),C.QPointF(20,12),C.QPointF(13,19)]))
         p.drawLine(6,8,9,4); p.setBrush(G.QColor('#49a5e6')); p.drawEllipse(C.QPointF(20,19),2,3)
     elif kind=='select':
-        p.setPen(G.QPen(G.QColor('#50627b'),1.5,C.Qt.DashLine)); p.drawRect(C.QRectF(3,4,18,16))
+        p.setPen(G.QPen(G.QColor('#20354d'),1.5,C.Qt.DashLine)); p.drawRect(C.QRectF(3,4,18,16))
     elif kind=='line':p.drawLine(3,20,21,3)
     elif kind=='rect':p.drawRect(C.QRectF(3,5,18,14))
     elif kind=='ellipse':p.drawEllipse(C.QRectF(3,4,18,16))
@@ -141,10 +141,10 @@ def paint_glass(p,rect,highlight=None):
     path=G.QPainterPath(); path.addRoundedRect(bounds,radius,radius)
     p.save(); p.setClipPath(path)
     gradient=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft())
-    gradient.setColorAt(0,G.QColor(255,255,255,145)); gradient.setColorAt(.44,G.QColor(246,251,255,70)); gradient.setColorAt(1,G.QColor(228,240,255,105))
+    gradient.setColorAt(0,G.QColor(255,255,255,90)); gradient.setColorAt(.44,G.QColor(246,251,255,28)); gradient.setColorAt(1,G.QColor(228,240,255,52))
     p.fillPath(path,gradient)
     glow=G.QRadialGradient(highlight or C.QPointF(bounds.width()*.23,0),max(90.,bounds.height()*2))
-    glow.setColorAt(0,G.QColor(255,255,255,135)); glow.setColorAt(1,G.QColor(255,255,255,0)); p.fillPath(path,glow)
+    glow.setColorAt(0,G.QColor(255,255,255,75)); glow.setColorAt(1,G.QColor(255,255,255,0)); p.fillPath(path,glow)
     p.restore()
     rim=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft()); rim.setColorAt(0,G.QColor(255,255,255,235)); rim.setColorAt(.5,G.QColor(255,255,255,100)); rim.setColorAt(1,G.QColor(167,199,231,160))
     p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QBrush(rim),1.1)); p.drawPath(path)
@@ -153,7 +153,7 @@ def paint_glass(p,rect,highlight=None):
 class GlassPanel(W.QWidget):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.setAttribute(C.Qt.WA_TranslucentBackground); self.setAutoFillBackground(False)
+        self.setAttribute(C.Qt.WA_TranslucentBackground,W.QApplication.platformName()!='windows'); self.setAttribute(C.Qt.WA_NoSystemBackground,True); self.setAutoFillBackground(False)
         self.glass_backend='pending'; self.glass_light=None; self.setMouseTracking(True)
     def showEvent(self,event):
         super().showEvent(event)
@@ -163,10 +163,25 @@ class GlassPanel(W.QWidget):
             hwnd=wintypes.HWND(int(self.winId())); dwm=ctypes.windll.dwmapi
             class Margins(ctypes.Structure):_fields_=[('left',ctypes.c_int),('right',ctypes.c_int),('top',ctypes.c_int),('bottom',ctypes.c_int)]
             margins=Margins(-1,-1,-1,-1); dwm.DwmExtendFrameIntoClientArea(hwnd,ctypes.byref(margins))
+            class Blur(ctypes.Structure):_fields_=[('flags',wintypes.DWORD),('enabled',wintypes.BOOL),('region',wintypes.HRGN),('transition',wintypes.BOOL)]
+            blur=Blur(1,True,None,False); dwm.DwmEnableBlurBehindWindow(hwnd,ctypes.byref(blur))
             corner=ctypes.c_int(2); dwm.DwmSetWindowAttribute(hwnd,33,ctypes.byref(corner),4)
             backdrop=ctypes.c_int(3)
             result=dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
             self.glass_backend='desktop-acrylic' if result==0 else 'translucent'
+            # Transparent blur works for non-activating tool windows where
+            # the system backdrop otherwise resolves to an opaque tint.
+            try:
+                class Accent(ctypes.Structure):_fields_=[('state',ctypes.c_int),('flags',ctypes.c_int),('color',wintypes.DWORD),('animation',ctypes.c_int)]
+                class CompositionData(ctypes.Structure):_fields_=[('attribute',ctypes.c_int),('data',ctypes.c_void_p),('size',ctypes.c_size_t)]
+                accent=Accent(3,0,0,0)
+                data=CompositionData(19,ctypes.cast(ctypes.pointer(accent),ctypes.c_void_p),ctypes.sizeof(accent))
+                apply=u.SetWindowCompositionAttribute
+                apply.argtypes=[wintypes.HWND,ctypes.POINTER(CompositionData)]; apply.restype=wintypes.BOOL
+                no_backdrop=ctypes.c_int(1); dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(no_backdrop),4)
+                if apply(hwnd,ctypes.byref(data)):self.glass_backend='windows-blur'
+                else:dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
+            except (OSError,AttributeError):pass
         except (OSError,AttributeError):self.glass_backend='translucent'
         for child in self.findChildren(W.QWidget):child.setMouseTracking(True); child.installEventFilter(self)
     def eventFilter(self,obj,event):
@@ -197,14 +212,17 @@ class PalettePanelBase(GlassPanel):
                 p.drawLine(C.QPointF(-scale*.35,scale*.18),C.QPointF(scale*.35,scale*.18))
             p.end(); self.previews[key].setPixmap(pix)
     def open(self):
-        self.animation.stop(); self.setWindowOpacity(0.); self.show(); self.raise_(); self.animation.setStartValue(0.); self.animation.setEndValue(1.); self.animation.start()
+        self.animation.stop(); target=self.pos(); start=target+C.QPoint(0,-6)
+        self.move(start); self.show(); self.raise_()
+        self.animation=C.QPropertyAnimation(self,b'pos'); self.animation.setDuration(180); self.animation.setEasingCurve(C.QEasingCurve.OutCubic)
+        self.animation.setStartValue(start); self.animation.setEndValue(target); self.animation.start()
     def dismiss(self):self.animation.stop(); self.hide()
 
 class CursorPalette(PalettePanelBase):
     def __init__(self,owner):
         GlassPanel.__init__(self,None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
         self.owner=owner
-        self.setAttribute(C.Qt.WA_TranslucentBackground); self.setStyleSheet(STYLE)
+        self.setStyleSheet(STYLE)
         outer=W.QVBoxLayout(self); outer.setContentsMargins(0,0,0,0)
         card=W.QFrame(); card.setObjectName('card'); outer.addWidget(card)
         layout=W.QVBoxLayout(card); layout.setContentsMargins(8,8,8,8); layout.setSpacing(5)
@@ -290,13 +308,13 @@ class HUD(GlassPanel):
         paint_glass(p,C.QRectF(0,0,675,48),light/self.ui_scale if light else None)
         p.translate(12,0)
         font=G.QFont('Segoe UI'); font.setPixelSize(6); p.setFont(font)
-        def text(rect,title,color='#46505c'):
+        def text(rect,title,color='#17273d'):
             p.setPen(G.QColor(color)); p.drawText(C.QRectF(*rect),C.Qt.AlignCenter,title)
         def icon(kind,x,y,w=12,h=12):
             p.save(); p.translate(x,y); p.scale(w/24,h/24); draw_action(p,kind); p.restore()
         for x in (53,115,157,185,311,338,383,495,519,550):
             p.setPen(G.QPen(G.QColor(255,255,255,120),.5)); p.drawLine(C.QPointF(x,1),C.QPointF(x,44))
-        for x,w,title in [(1,51,'Clipboard'),(54,60,'Image'),(116,41,'Tools'),(158,27,'Brushes'),(186,125,'Shapes'),(312,26,'Size'),(339,180,'Colors')]:text((x,36,w,9),title,'#718096')
+        for x,w,title in [(1,51,'Clipboard'),(54,60,'Image'),(116,41,'Tools'),(158,27,'Brushes'),(186,125,'Shapes'),(312,26,'Size'),(339,180,'Colors')]:text((x,36,w,9),title,'#43566f')
         # Highlight follows the selected tool, rather than a baked-in screenshot.
         selected=self.tool_buttons.get(self.owner.drawing_tool)
         if selected:
@@ -315,7 +333,7 @@ class HUD(GlassPanel):
             for j in range(3):
                 rect=C.QRectF(190+i*10,4+j*10,7,6)
                 supported={(0,0):'line',(2,0):'ellipse',(3,0):'rect',(6,0):'triangle'}
-                kind=supported.get((i,j)); p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QColor('#526d89' if kind else '#b6c1cd'),.65))
+                kind=supported.get((i,j)); p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QColor('#243e60' if kind else '#b6c1cd'),.65))
                 if kind=='line':p.drawLine(rect.topLeft(),rect.bottomRight())
                 elif kind=='ellipse':p.drawEllipse(rect)
                 elif kind=='triangle':p.drawPolygon(G.QPolygonF([C.QPointF(rect.center().x(),rect.top()),rect.bottomLeft(),rect.bottomRight()]))
@@ -338,7 +356,7 @@ class HUD(GlassPanel):
         for at,color in [(0,'#ff5252'),(.25,'#ffdf4b'),(.5,'#4ad687'),(.75,'#45b8ed'),(1,'#ab68dd')]:gradient.setColorAt(at,G.QColor(color))
         p.fillRect(C.QRectF(499,3,15,15),gradient); text((496,20,22,14),'Edit\ncolors')
         icon('camera',525,3,18,18); text((520,22,29,11),'Capture')
-        font.setPixelSize(9); font.setBold(True); p.setFont(font); text((556,7,90,16),'Paint Overlay','#355375')
+        font.setPixelSize(9); font.setBold(True); p.setFont(font); text((556,7,90,16),'Paint Overlay','#193c5d')
         font.setPixelSize(6); font.setBold(False); p.setFont(font); text((556,25,90,10),'Ctrl+D · Mouse3','#7b8b9e')
     def open(self):PalettePanelBase.open(self)
     def dismiss(self):PalettePanelBase.dismiss(self)

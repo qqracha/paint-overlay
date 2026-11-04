@@ -17,10 +17,10 @@ except Exception: pass
 COLORS = ['#ff3434', '#ffbd2e', '#43d886', '#44aaff', '#c279ff', '#202b3a', '#ffffff', '#f27832']
 STYLE = '''
 QWidget {color:#344054;font:10pt Segoe UI;}
-QFrame#card {background:transparent;border:0;border-radius:20px;}
+QFrame#card {background:transparent;border:0;border-radius:12px;}
 QLabel {background:transparent;border:0;}
-QPushButton {background:rgba(255,255,255,65);border:1px solid rgba(255,255,255,135);border-radius:10px;padding:6px;}
-QPushButton:hover {background:rgba(255,255,255,150);}
+QPushButton {background:#edf2f8;border:1px solid #d9e2ed;border-radius:8px;padding:6px;}
+QPushButton:hover {background:#dce9fa;}
 QComboBox {background:white;border:1px solid #d6deea;border-radius:6px;padding:4px;}
 QSlider::groove:horizontal {height:4px;background:#dce3ed;border-radius:2px;}
 QSlider::sub-page:horizontal {background:#6297dc;border-radius:2px;}
@@ -139,55 +139,17 @@ def action_icon(kind):return G.QIcon(VectorIcon(kind))
 
 def paint_glass(p,rect,highlight=None):
     p.setRenderHint(G.QPainter.Antialiasing)
-    bounds=C.QRectF(rect).adjusted(.8,.8,-.8,-.8)
-    radius=min(5.,bounds.height()/2)
-    path=G.QPainterPath(); path.addRoundedRect(bounds,radius,radius)
-    p.save(); p.setClipPath(path)
-    gradient=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft())
-    gradient.setColorAt(0,G.QColor(255,255,255,90)); gradient.setColorAt(.44,G.QColor(246,251,255,28)); gradient.setColorAt(1,G.QColor(228,240,255,52))
-    p.fillPath(path,gradient)
-    p.restore()
-    rim=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft()); rim.setColorAt(0,G.QColor(255,255,255,235)); rim.setColorAt(.5,G.QColor(255,255,255,100)); rim.setColorAt(1,G.QColor(167,199,231,160))
-    p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QBrush(rim),1.1)); p.drawPath(path)
-
+    p.setBrush(G.QColor('#fafcff')); p.setPen(G.QPen(G.QColor('#d9e2ed'),1))
+    p.drawRoundedRect(C.QRectF(rect).adjusted(.5,.5,-.5,-.5),12,12)
 
 class GlassPanel(W.QWidget):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
-        self.setAttribute(C.Qt.WA_TranslucentBackground,W.QApplication.platformName()!='windows'); self.setAttribute(C.Qt.WA_NoSystemBackground,True); self.setAutoFillBackground(False)
-        self.glass_backend='pending'; self.glass_light=None
-    def showEvent(self,event):
-        super().showEvent(event)
-        if W.QApplication.platformName()!='windows':self.glass_backend='translucent'; return
-        try:
-            from ctypes import wintypes
-            hwnd=wintypes.HWND(int(self.winId())); dwm=ctypes.windll.dwmapi
-            class Margins(ctypes.Structure):_fields_=[('left',ctypes.c_int),('right',ctypes.c_int),('top',ctypes.c_int),('bottom',ctypes.c_int)]
-            margins=Margins(-1,-1,-1,-1); dwm.DwmExtendFrameIntoClientArea(hwnd,ctypes.byref(margins))
-            class Blur(ctypes.Structure):_fields_=[('flags',wintypes.DWORD),('enabled',wintypes.BOOL),('region',wintypes.HRGN),('transition',wintypes.BOOL)]
-            blur=Blur(1,True,None,False); dwm.DwmEnableBlurBehindWindow(hwnd,ctypes.byref(blur))
-            border=ctypes.c_uint(0xFFFFFFFE); dwm.DwmSetWindowAttribute(hwnd,34,ctypes.byref(border),4)
-            corner=ctypes.c_int(2); dwm.DwmSetWindowAttribute(hwnd,33,ctypes.byref(corner),4)
-            backdrop=ctypes.c_int(3)
-            result=dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
-            self.glass_backend='desktop-acrylic' if result==0 else 'translucent'
-            # Transparent blur works for non-activating tool windows where
-            # the system backdrop otherwise resolves to an opaque tint.
-            try:
-                class Accent(ctypes.Structure):_fields_=[('state',ctypes.c_int),('flags',ctypes.c_int),('color',wintypes.DWORD),('animation',ctypes.c_int)]
-                class CompositionData(ctypes.Structure):_fields_=[('attribute',ctypes.c_int),('data',ctypes.c_void_p),('size',ctypes.c_size_t)]
-                accent=Accent(3,0,0,0)
-                data=CompositionData(19,ctypes.cast(ctypes.pointer(accent),ctypes.c_void_p),ctypes.sizeof(accent))
-                apply=u.SetWindowCompositionAttribute
-                apply.argtypes=[wintypes.HWND,ctypes.POINTER(CompositionData)]; apply.restype=wintypes.BOOL
-                no_backdrop=ctypes.c_int(1); dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(no_backdrop),4)
-                if apply(hwnd,ctypes.byref(data)):self.glass_backend='windows-blur'
-                else:dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
-            except (OSError,AttributeError):pass
-        except (OSError,AttributeError):self.glass_backend='translucent'
+        self.setAttribute(C.Qt.WA_TranslucentBackground); self.setAutoFillBackground(False)
+        self.glass_backend='solid-white'; self.glass_light=None
     def paintEvent(self,event):
-        painter=G.QPainter(self); painter.setCompositionMode(G.QPainter.CompositionMode_Source); painter.fillRect(self.rect(),C.Qt.transparent); painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
-        paint_glass(painter,self.rect(),getattr(self,'glass_light',None))
+        p=G.QPainter(self); p.setCompositionMode(G.QPainter.CompositionMode_Source); p.fillRect(self.rect(),C.Qt.transparent); p.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
+        paint_glass(p,self.rect())
 
 class PalettePanelBase(GlassPanel):
     def refresh(self):
@@ -302,140 +264,41 @@ class CaptureToast(GlassPanel):
         self.detail_text='Скопирован в буфер · Монитор '+str(number); self.update()
         area=screen.availableGeometry(); self.move(area.right()-self.width()-18,area.bottom()-self.height()-18); self.show(); self.raise_(); self.timer.start(3300)
 
-class HUD(GlassPanel):
+class HUD(PalettePanelBase):
     def __init__(self,owner):
         super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
-        self.owner=owner
-        self.ui_scale=2.4
-        self.setFixedSize(round(562*self.ui_scale),round(58*self.ui_scale))
-        self.swatches=[['#000000','#7f7f7f','#880015','#ed1c24','#ff7f27','#fff200','#22b14c','#00a2e8','#3f48cc','#a349a4'],['#ffffff','#c3c3c3','#b97a57','#ffaec9','#ffc90e','#efe4b0','#b5e61d','#99d9ea','#7092be','#c8bfe7'],['#24334c','#476385','#6b91b8','#77bfa3','#e47856','#e7b66a','#8e78bb','#78b6c8','#b6c4d8','#e6ebf2']]
-        self.tool_buttons={}; self.colors={}; self.hotspots=[]
-        self.setStyleSheet('QPushButton {border:0;background:transparent;padding:0;border-radius:8px;} QPushButton:hover {background:rgba(30,65,110,18);border:1px solid rgba(70,110,160,90);} QPushButton:pressed {background:rgba(130,190,250,100);}')
-        def hit(rect,tip,callback=None,key=None):
-            if rect[0] in (1,55,159,313,340,362,496,520) and rect[3]>=33:rect=(rect[0],rect[1],rect[2],42)
-            button=W.QPushButton(self); button.setProperty('baseRect',rect); button.setGeometry(*(round((v+12 if i==0 else v)*self.ui_scale) for i,v in enumerate(rect))); button.setToolTip(tip); button.setAccessibleName(tip)
-            if callback:button.clicked.connect(callback)
-            else:button.setToolTip(tip+' — пока недоступно'); button.setProperty('unavailable',True); button.setEnabled(False)
-            if key:
-                button.setCheckable(True); self.tool_buttons[key]=button
-            self.hotspots.append(button)
-            return button
-        hit((1,1,23,33),'Вставить · Ctrl+V',owner.prepare_paste)
-        hit((25,1,26,11),'Вырезать · Ctrl+X',lambda:owner.copy_selection(True))
-        hit((25,13,26,11),'Копировать · Ctrl+C',owner.copy_selection)
-        hit((55,1,22,33),'Выделение · S',lambda:owner.select_tool('select'),'select')
-        for rect,title in [((78,1,34,11),'Обрезать'),((78,12,34,11),'Изменить размер'),((78,23,34,11),'Повернуть')]:hit(rect,title)
-        hit((118,2,13,16),'Кисть · B',lambda:owner.select_tool('brush'),'brush')
-        hit((131,2,13,16),'Заливка',lambda:owner.select_tool('fill'),'fill')
-        hit((144,2,12,16),'Текст · T',lambda:owner.select_tool('text'),'text')
-        hit((118,18,13,15),'Ластик · E',lambda:owner.select_tool('eraser'),'eraser')
-        hit((131,18,13,15),'Пипетка',owner.pick_color,'picker')
-        hit((144,18,12,15),'Масштаб')
-        hit((159,1,24,33),'Кисти · B',self.brush_menu)
-        for i in range(7):
-            for j in range(3):
-                tools={(0,0):('line','Линия'),(2,0):('ellipse','Эллипс'),(3,0):('rect','Прямоугольник'),(6,0):('triangle','Треугольник')}
-                pair=tools.get((i,j))
-                hit((188+i*10,2+j*10,10,10),pair[1] if pair else 'Фигура', (lambda checked=False,k=pair[0]:owner.select_tool(k)) if pair else None,pair[0] if pair else None)
-        hit((273,1,38,12),'Контур',lambda:owner.set_shape_fill(False))
-        hit((273,14,38,13),'Заливка фигуры',lambda:owner.set_shape_fill(True))
-        hit((313,1,24,33),'Размер кисти / ластика',self.size_menu)
-        hit((340,1,21,34),'Основной цвет',self.choose_color)
-        hit((362,1,20,34),'Дополнительный цвет',self.choose_color)
-        for col in range(10):
-            for row in range(3):
-                x,y=384+col*11,2+row*11
-                color=self.swatches[row][col]
-                b=hit((x,y,11,11),color,lambda checked=False,c=color:owner.set_value('color',c)); self.colors[color]=b
-        hit((496,1,22,34),'Изменить цвет',self.choose_color)
-        hit((520,1,29,34),'Скриншот · Ctrl+Alt+S',owner.screenshot)
-        self.animation=C.QPropertyAnimation(self,b'windowOpacity'); self.animation.setDuration(160); self.animation.setEasingCurve(C.QEasingCurve.OutCubic)
+        self.owner=owner; self.setStyleSheet(STYLE)
+        self.colors={}; self.sliders={}; self.previews={}; self.values={}; self.actions={}; self.tool_buttons={}
+        row=W.QHBoxLayout(self); row.setContentsMargins(10,7,10,7); row.setSpacing(5)
+        for color in COLORS:
+            button=W.QPushButton(); button.setFixedSize(23,23); button.clicked.connect(lambda checked=False,c=color:owner.set_value('color',c)); row.addWidget(button); self.colors[color]=button
+        for key,steps in [('width',[1,2,3,5,8,12,16,24,32,40]),('eraser',[4,8,12,20,28,40,56,72,88,100])]:
+            preview=W.QLabel(); preview.setFixedSize(28,32); row.addWidget(preview); self.previews[key]=preview
+            slider=SizeSlider(steps); slider.setFixedWidth(72); slider.setToolTip('Кисть' if key=='width' else 'Ластик'); slider.sizeChanged.connect(lambda v,k=key:owner.set_value(k,v)); row.addWidget(slider); self.sliders[key]=slider
+            value=W.QLabel(); value.setFixedWidth(24); value.setAlignment(C.Qt.AlignCenter); row.addWidget(value); self.values[key]=value
+        for kind,tip,callback in [('undo','Отменить · Ctrl+Z',owner.undo),('redo','Повторить · Ctrl+Shift+Z',owner.redo),('clear','Очистить · Ctrl+Alt+E',owner.clear),('camera','Снимок · Ctrl+Alt+S',owner.screenshot)]:
+            button=W.QPushButton(); button.setIcon(action_icon(kind)); button.setIconSize(C.QSize(21,21)); button.setFixedSize(30,30); button.setStyleSheet('padding:0;'); button.setToolTip(tip); button.clicked.connect(callback); row.addWidget(button); self.actions[kind]=button
+        tools=W.QPushButton('⋯'); tools.setFixedSize(30,30); tools.setToolTip('Инструменты'); tools.clicked.connect(self.tool_menu); row.addWidget(tools)
         self.brush_popup=BrushChooser(owner)
-    def fit_to_screen(self,area):
-        self.ui_scale=min(2.4,max(1.0,(area.width()-32)/562))
-        self.setFixedSize(round(562*self.ui_scale),round(58*self.ui_scale))
-        for button in self.hotspots:
-            rect=button.property('baseRect')
-            button.setGeometry(*(round((v+12 if i==0 else v)*self.ui_scale) for i,v in enumerate(rect)))
-        self.update()
-    def brush_menu(self):
-        self.owner.panel.dismiss(); self.owner.select_tool('brush')
-        if self.brush_popup.isVisible():self.brush_popup.hide()
-        else:self.brush_popup.reveal(self.mapToGlobal(C.QPoint(round(171*self.ui_scale),self.height()+5)))
-    def size_menu(self):
+        self.animation=C.QPropertyAnimation(self,b'pos'); self.setFixedHeight(54); self.adjustSize(); self.refresh()
+    def refresh(self):
+        PalettePanelBase.refresh(self)
+        for key,slider in self.sliders.items():
+            slider.set_size(self.owner.cfg[key]); self.values[key].setText(str(self.owner.cfg[key]))
+    def fit_to_screen(self,area):pass
+    def tool_menu(self):
         menu=W.QMenu(self)
-        for key,title,values in [('width','Кисть',[1,2,3,5,8,12,16,24,32,40]),('eraser','Ластик',[4,8,12,20,28,40,56,72,88,100])]:
-            sub=menu.addMenu(title)
-            for value in values:
-                action=sub.addAction(str(value)+' px'); action.setCheckable(True); action.setChecked(value==self.owner.cfg[key]); action.triggered.connect(lambda checked=False,k=key,v=value:self.owner.set_value(k,v))
-        menu.exec(self.mapToGlobal(C.QPoint(round(325*self.ui_scale),self.height()+5)))
+        for title,key in [('Кисть · B','brush'),('Ластик · E','eraser'),('Выделение · S','select'),('Текст · T','text'),('Линия','line'),('Прямоугольник','rect'),('Эллипс','ellipse'),('Треугольник','triangle'),('Заливка','fill'),('Пипетка','picker')]:
+            action=menu.addAction(title); action.setCheckable(True); action.setChecked(self.owner.drawing_tool==key); action.triggered.connect(lambda checked=False,k=key:self.owner.select_tool(k))
+        menu.addSeparator(); menu.addAction('Тип кисти',self.brush_menu); menu.addAction('Другой цвет',self.choose_color)
+        menu.exec(self.mapToGlobal(C.QPoint(self.width()-30,self.height()+4)))
+    def brush_menu(self):self.brush_popup.reveal(self.mapToGlobal(C.QPoint(self.width()-210,self.height()+4)))
     def choose_color(self):
         self.owner.set_layer_shortcuts(False)
         try:
             color=W.QColorDialog.getColor(G.QColor(self.owner.cfg['color']),self)
             if color.isValid():self.owner.set_value('color',color.name())
         finally:self.owner.set_layer_shortcuts(self.owner.overlay.shield and self.owner.text_editor is None)
-    def refresh(self):
-        for key,b in self.tool_buttons.items():b.setChecked(key==self.owner.drawing_tool)
-        self.update()
-    def paintEvent(self,event):
-        p=G.QPainter(self); p.setCompositionMode(G.QPainter.CompositionMode_Source); p.fillRect(self.rect(),C.Qt.transparent); p.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
-        p.setRenderHint(G.QPainter.Antialiasing); p.setRenderHint(G.QPainter.TextAntialiasing)
-        p.scale(self.ui_scale,self.ui_scale)
-        light=getattr(self,'glass_light',None)
-        paint_glass(p,C.QRectF(0,0,562,58),light/self.ui_scale if light else None)
-        p.translate(12,0)
-        font=G.QFont('Segoe UI'); font.setPixelSize(7); p.setFont(font)
-        def text(rect,title,color='#17273d'):
-            p.setPen(G.QColor(color)); p.drawText(C.QRectF(*rect),C.Qt.AlignCenter,title)
-        def icon(kind,x,y,w=12,h=12):
-            p.save(); p.translate(x,y); p.scale(w/24,h/24); draw_action(p,kind); p.restore()
-        for x in (53,115,157,185,311,338,383,495,519):
-            p.setPen(G.QPen(G.QColor(255,255,255,120),.5)); p.drawLine(C.QPointF(x,1),C.QPointF(x,54))
-        for x,w,title in [(1,51,'Clipboard'),(54,60,'Image'),(116,41,'Tools'),(158,27,'Brushes'),(186,125,'Shapes'),(312,26,'Size'),(339,180,'Colors')]:text((x,46,w,10),title,'#43566f')
-        # Highlight follows the selected tool, rather than a baked-in screenshot.
-        selected=self.tool_buttons.get(self.owner.drawing_tool)
-        if selected:
-            r=selected.geometry(); r=C.QRectF(r.x()/self.ui_scale-12,r.y()/self.ui_scale,r.width()/self.ui_scale,r.height()/self.ui_scale)
-            p.setBrush(G.QColor(90,170,255,65)); p.setPen(G.QPen(G.QColor(255,255,255,210),.7)); p.drawRoundedRect(r.adjusted(.7,.7,-.7,-.7),4,4)
-        icon('paste',5,2,15,18); text((1,23,23,11),'Paste'); text((7,35,10,6),'▾')
-        icon('cut',25,2,7,8); text((32,1,19,10),'Cut')
-        icon('copy',25,14,7,8); text((32,13,19,10),'Copy')
-        icon('select',57,2,17,15); text((55,23,22,11),'Select'); text((61,35,10,6),'▾')
-        for y,title,glyph in [(1,'Crop','⌗'),(12,'Resize','▱'),(23,'Rotate','↶')]:
-            text((78,y,9,10),glyph,'#a4aab3'); text((86,y,28,10),title,'#9aa3ae')
-        for kind,x,y in [('brush',119,3),('fill',132,3),('eraser',119,20)]:icon(kind,x,y,10,10)
-        text((144,3,11,11),'A','#20354d'); icon('picker',132,20,10,10); text((144,20,11,10),'⌕','#9aa3ae')
-        icon('brush',162,2,18,19); text((157,23,28,11),'Brushes'); text((166,35,10,6),'▾')
-        for i in range(7):
-            for j in range(3):
-                rect=C.QRectF(190+i*10,4+j*10,7,6)
-                supported={(0,0):'line',(2,0):'ellipse',(3,0):'rect',(6,0):'triangle'}
-                kind=supported.get((i,j)); p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QColor('#18334e' if kind else '#667c91'),.9 if kind else .65))
-                if kind=='line':p.drawLine(rect.topLeft(),rect.bottomRight())
-                elif kind=='ellipse':p.drawEllipse(rect)
-                elif kind=='triangle':p.drawPolygon(G.QPolygonF([C.QPointF(rect.center().x(),rect.top()),rect.bottomLeft(),rect.bottomRight()]))
-                elif kind=='rect':p.drawRect(rect)
-                elif j==1:p.drawPolygon(G.QPolygonF([C.QPointF(rect.center().x(),rect.top()),C.QPointF(rect.right(),rect.center().y()),C.QPointF(rect.center().x(),rect.bottom()),C.QPointF(rect.left(),rect.center().y())]))
-                else:p.drawRoundedRect(rect,1.5,1.5)
-        icon('rect',274,3,8,8); text((283,1,27,11),'Outline ▾')
-        icon('fill',274,15,8,8); text((283,14,27,11),'Fill ▾')
-        for i,width in enumerate((.7,1.2,2,3)):
-            p.setPen(G.QPen(G.QColor('#32465e'),width)); p.drawLine(C.QPointF(316,4+i*5),C.QPointF(334,4+i*5))
-        text((313,28,26,12),'Size ▾')
-        for x,title,color in [(340,'Color 1',self.owner.cfg['color']),(362,'Color 2','#ffffff')]:
-            p.setPen(G.QPen(G.QColor('#9aaabf'),.6)); p.setBrush(G.QColor(color)); p.drawRect(C.QRectF(x+3,3,15,15)); text((x,22,21,20),title.replace(' ','\n'))
-        p.setBrush(C.Qt.NoBrush)
-        for row,colors in enumerate(self.swatches):
-            for col,color in enumerate(colors):
-                rect=C.QRectF(385+col*11,3+row*11,9,9); p.setPen(G.QPen(G.QColor(255,255,255,170),.55)); p.setBrush(G.QColor(color)); p.drawRoundedRect(rect,2,2); p.setBrush(C.Qt.NoBrush)
-                if color.lower()==self.owner.cfg['color'].lower():p.setPen(G.QPen(G.QColor('#2684e3'),1)); p.drawRoundedRect(rect.adjusted(-.8,-.8,.8,.8),2.5,2.5)
-        gradient=G.QLinearGradient(497,3,514,18)
-        for at,color in [(0,'#ff5252'),(.25,'#ffdf4b'),(.5,'#4ad687'),(.75,'#45b8ed'),(1,'#ab68dd')]:gradient.setColorAt(at,G.QColor(color))
-        p.fillRect(C.QRectF(499,3,15,15),gradient); text((496,22,22,20),'Edit\ncolors')
-        icon('camera',525,3,18,18); text((519,25,31,12),'Capture')
-    def open(self):PalettePanelBase.open(self)
-    def dismiss(self):PalettePanelBase.dismiss(self)
 
 class HotkeyFilter(C.QAbstractNativeEventFilter):
     def __init__(self,owner):super().__init__(); self.owner=owner

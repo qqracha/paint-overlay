@@ -1,16 +1,18 @@
 import os
+import atexit
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 sandbox = tempfile.TemporaryDirectory()
+atexit.register(sandbox.cleanup)
 os.environ['LOCALAPPDATA'] = sandbox.name
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 import paint_overlay as m
 
-class OverlayTests(unittest.TestCase):
+class BaseOverlay(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.qt = m.W.QApplication.instance() or m.W.QApplication([])
@@ -19,9 +21,8 @@ class OverlayTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.app.tray.hide()
-        for key in range(712,720):m.u.UnregisterHotKey(None,key)
+        for key in range(712,725):m.u.UnregisterHotKey(None,key)
         for widget in (cls.app.panel,cls.app.dock,cls.app.overlay):widget.close()
-        sandbox.cleanup()
     def setUp(self):
         self.app.overlay.clear()
         self.app.overlay.history=[]
@@ -30,6 +31,8 @@ class OverlayTests(unittest.TestCase):
         self.app.cfg['color']='#ff3434'
         self.app.shape_filled=False
         self.app.moving=False
+
+class OverlayTests(BaseOverlay):
     def test_undo_redo_and_partial_eraser(self):
         o=self.app.overlay
         o.checkpoint(); o.segment(m.C.QPointF(50,50),m.C.QPointF(100,50),'red',8)
@@ -48,7 +51,7 @@ class OverlayTests(unittest.TestCase):
         self.assertEqual(self.qt.clipboard().image().size(),m.C.QSize(60,60))
         a.copy_selection(True)
         self.assertEqual(a.overlay.image.pixelColor(70,70).alpha(),0)
-        a.prepare_paste(); self.assertIsNotNone(a.paste_image)
+        a.prepare_paste(); self.assertIsNotNone(a.overlay.selection)
     def test_shift_square_and_selection_delete(self):
         a=self.app; a.drawing_tool='rect'; a.shape(m.C.QPointF(30,30),m.C.QPointF(90,60),True)
         self.assertGreater(a.overlay.image.pixelColor(90,90).alpha(),0)
@@ -58,7 +61,7 @@ class OverlayTests(unittest.TestCase):
     def test_native_ribbon_and_palette(self):
         a=self.app
         self.assertFalse(hasattr(a.dock,'background'))
-        self.assertEqual(a.dock.size(),m.C.QSize(1080,77))
+        self.assertEqual(a.dock.size(),m.C.QSize(899,77))
         self.assertEqual(len(a.panel.colors),6)
         self.assertTrue(all(s.orientation()==m.C.Qt.Horizontal for s in a.panel.sliders.values()))
         a.dock.tool_buttons['ellipse'].click()
@@ -78,5 +81,113 @@ class OverlayTests(unittest.TestCase):
             clock.now=350; a.repeat_history('undo',True); self.assertEqual(len(a.overlay.history),count-2)
             a.repeat_history(None,False); a.repeat_history('redo',True); self.assertEqual(len(a.overlay.history),count-1)
         finally:a.history_clock=oldclock; a.overlay.shield=oldshield; a.repeat_kind=None
+
+class PaintWorkflowTests(BaseOverlay):
+    def tearDown(self):
+        a=self.app
+        if a.text_editor is not None:a.finish_text(False,refresh=False)
+        a.cfg['shield']=False; a.overlay.shield=False; a.set_layer_shortcuts(False)
+        a.gesture=None; a.previous=None; a.moving=False; a.last_draw_global=None
+        a.dock.brush_popup.hide(); a.capture_toast.hide()
+    def test_canvas_selection_move_resize_and_outside_click(self):
+        a=self.app; a.overlay.clear(); a.gesture=None
+        p=m.G.QPainter(a.overlay.image); p.fillRect(60,60,40,40,m.G.QColor('red')); p.end()
+        a.select_tool('select'); before=len(a.overlay.history)
+        a.canvas_input(m.C.QPointF(50,50),True); a.canvas_input(m.C.QPointF(110,110),True); a.canvas_input(m.C.QPointF(),False)
+        self.assertEqual(len(a.overlay.history),before)
+        a.canvas_input(m.C.QPointF(80,80),True); a.canvas_input(m.C.QPointF(180,80),True); a.canvas_input(m.C.QPointF(),False)
+        self.assertEqual(a.overlay.image.pixelColor(80,80).alpha(),0)
+        self.assertEqual(a.overlay.image.pixelColor(180,80).name(),'#ff0000')
+        a.canvas_input(m.C.QPointF(210,80),True); a.canvas_input(m.C.QPointF(250,80),True); a.canvas_input(m.C.QPointF(),False)
+        self.assertEqual(a.overlay.selection.width(),100)
+        a.canvas_input(m.C.QPointF(10,180),True); a.canvas_input(m.C.QPointF(),False)
+        self.assertIsNone(a.overlay.selection)
+        self.assertGreater(a.overlay.image.pixelColor(180,80).alpha(),0)
+    def test_paste_is_immediate_and_selected(self):
+        a=self.app; image=m.G.QImage(16,12,m.G.QImage.Format_ARGB32_Premultiplied); image.fill(m.G.QColor('red'))
+        self.qt.clipboard().setImage(image); a.prepare_paste()
+        self.assertIsNotNone(a.overlay.selection)
+        rect=a.overlay.selection.toAlignedRect()
+        self.assertEqual(rect.size(),m.C.QSize(16,12))
+        self.assertEqual(a.overlay.image.pixelColor(rect.center()).name(),'#ff0000')
+        self.assertEqual(a.drawing_tool,'select')
+    def test_nine_brushes_have_distinct_rendering(self):
+        from brushes import BRUSHES, draw_segment
+        renders=set()
+        for kind,title in BRUSHES:
+            image=m.G.QImage(120,80,m.G.QImage.Format_ARGB32_Premultiplied); image.fill(m.C.Qt.transparent)
+            draw_segment(image,m.C.QPointF(20,20),m.C.QPointF(90,55),'#ff3434',12,kind)
+            pixels=bytes(image.constBits()); self.assertTrue(any(pixels),title); renders.add(pixels)
+        self.assertEqual(len(renders),9)
+        a=self.app; a.dock.brush_popup.choose('marker')
+        self.assertEqual(a.cfg['brush_kind'],'marker'); self.assertEqual(a.drawing_tool,'brush')
+        a.cfg['brush_kind']='round'
+    def test_tool_keys_and_editor_suspend_shortcuts(self):
+        a=self.app; real=m.u
+        class Keys:
+            held=set()
+            @staticmethod
+            def GetAsyncKeyState(key):return 0x8000 if key in Keys.held else 0
+        try:
+            m.u=Keys; a.overlay.shield=True
+            for vk,tool in ((0x42,'brush'),(0x45,'eraser'),(0x53,'select'),(0x54,'text')):
+                Keys.held=set(); a.tick(); Keys.held={vk}; a.tick(); self.assertEqual(a.drawing_tool,tool)
+        finally:m.u=real
+        a.cfg['shield']=True; a.open_text(m.C.QPointF(30,40))
+        self.assertFalse(a.layer_shortcuts_active)
+        a.text_editor.edit.setPlainText('BES Текст')
+        a.finish_text(True)
+        self.assertIsNone(a.text_editor); self.assertTrue(a.layer_shortcuts_active)
+        rect=a.overlay.selection.toAlignedRect()
+        self.assertTrue(any(bytes(a.overlay.image.copy(rect).constBits())))
+    def test_capture_is_single_monitor_at_native_resolution(self):
+        a=self.app
+        class Screen:
+            def __init__(self,x,ratio):self.x=x; self.ratio=ratio
+            def geometry(self):return m.C.QRect(self.x,0,400,400)
+            def grabWindow(self,window):
+                image=m.G.QImage(400*self.ratio,400*self.ratio,m.G.QImage.Format_ARGB32_Premultiplied); image.fill(m.G.QColor('#335577'))
+                pix=m.G.QPixmap.fromImage(image); pix.setDevicePixelRatio(self.ratio); return pix
+        first=Screen(0,1); second=Screen(400,2)
+        p=m.G.QPainter(a.overlay.image); p.fillRect(440,40,30,30,m.G.QColor('red')); p.end()
+        self.assertIs(a.choose_capture_screen([first,second],m.C.QPoint(450,50)),second)
+        result=a.capture_screen_image(second)
+        self.assertEqual(result.size(),m.C.QSize(800,800))
+        self.assertEqual(result.pixelColor(100,100).name(),'#ff0000')
+        self.assertEqual(a.capture_screen_image(first).pixelColor(50,50).name(),'#335577')
+    def test_capture_copies_png_and_notifies(self):
+        a=self.app
+        class Screen:
+            def geometry(self):return m.C.QRect(0,0,400,400)
+            def grabWindow(self,window):
+                pix=m.G.QPixmap(400,400); pix.fill(m.G.QColor('#335577')); return pix
+        screen=Screen(); original_target=a.capture_target; original_notify=a.capture_toast.notify
+        original_path=m.C.QStandardPaths.writableLocation; original_warning=m.W.QMessageBox.warning
+        notifications=[]; errors=[]
+        try:
+            a.capture_target=lambda:screen; a.capture_toast.notify=lambda target:notifications.append(target)
+            m.C.QStandardPaths.writableLocation=lambda location:sandbox.name
+            m.W.QMessageBox.warning=lambda *args:errors.append(args)
+            a.screenshot(); loop=m.C.QEventLoop(); m.C.QTimer.singleShot(450,loop.quit); loop.exec()
+            self.assertFalse(errors); self.assertFalse(a.capturing)
+            self.assertTrue(a.last_screenshot.exists()); self.assertEqual(self.qt.clipboard().image().size(),m.C.QSize(400,400)); self.assertEqual(notifications,[screen])
+        finally:
+            a.capture_target=original_target; a.capture_toast.notify=original_notify
+            m.C.QStandardPaths.writableLocation=original_path; m.W.QMessageBox.warning=original_warning
+    def test_no_pointer_glow_and_aligned_active_tool(self):
+        first=m.G.QImage(300,80,m.G.QImage.Format_ARGB32_Premultiplied); first.fill(m.C.Qt.transparent)
+        second=first.copy()
+        for image,point in ((first,m.C.QPointF(30,10)),(second,m.C.QPointF(260,60))):
+            p=m.G.QPainter(image); m.paint_glass(p,image.rect(),point); p.end()
+        self.assertEqual(bytes(first.constBits()),bytes(second.constBits()))
+        a=self.app; a.select_tool('brush'); before=a.dock.grab().toImage().convertToFormat(m.G.QImage.Format_RGBA8888)
+        a.select_tool('select'); after=a.dock.grab().toImage().convertToFormat(m.G.QImage.Format_RGBA8888)
+        allowed=m.G.QRegion(a.dock.tool_buttons['brush'].geometry().adjusted(-2,-2,2,2)).united(m.G.QRegion(a.dock.tool_buttons['select'].geometry().adjusted(-2,-2,2,2)))
+        old=bytes(before.constBits()); new=bytes(after.constBits()); changes=0
+        for y in range(before.height()):
+            for x in range(before.width()):
+                i=y*before.bytesPerLine()+x*4
+                if old[i:i+4]!=new[i:i+4]:self.assertTrue(allowed.contains(m.C.QPoint(x,y)),(x,y)); changes+=1
+        self.assertGreater(changes,0)
 
 if __name__=='__main__':unittest.main()

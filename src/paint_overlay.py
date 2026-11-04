@@ -1,6 +1,7 @@
 import sys, ctypes, json, os, math
 from PIL import Image, ImageDraw
 from pathlib import Path
+from brushes import BRUSHES, brush_icon, draw_segment as brush_segment
 from PySide6 import QtCore as C, QtGui as G, QtWidgets as W
 
 APP = 'Paint Overlay'
@@ -68,11 +69,7 @@ class Overlay(W.QWidget):
             p.setPen(G.QPen(G.QColor('#ffffff'),3)); p.drawRect(rect)
             p.setPen(G.QPen(G.QColor('#287ce0'),1.5,C.Qt.DashLine)); p.drawRect(rect)
             p.setBrush(G.QColor('white')); p.setPen(G.QPen(G.QColor('#287ce0'),1))
-            for point in (rect.topLeft(),rect.topRight(),rect.bottomLeft(),rect.bottomRight()):p.drawRect(C.QRectF(point.x()-3,point.y()-3,6,6))
-            caption='Перетащите · Ctrl+C / Ctrl+V · Delete'
-            label=C.QRectF(max(2,min(rect.left(),self.width()-290)),max(2,rect.top()-27),286,23)
-            p.setPen(C.Qt.NoPen); p.setBrush(G.QColor('#eaf3ff')); p.drawRoundedRect(label,4,4)
-            p.setPen(G.QColor('#24588d')); p.drawText(label,C.Qt.AlignCenter,caption)
+            for point in (rect.topLeft(),rect.topRight(),rect.bottomLeft(),rect.bottomRight(),C.QPointF(rect.center().x(),rect.top()),C.QPointF(rect.center().x(),rect.bottom()),C.QPointF(rect.left(),rect.center().y()),C.QPointF(rect.right(),rect.center().y())):p.drawRect(C.QRectF(point.x()-3,point.y()-3,6,6))
 
 class SizeSlider(W.QSlider):
     sizeChanged=C.Signal(int)
@@ -87,8 +84,8 @@ class SizeSlider(W.QSlider):
 
 
 def draw_action(p,kind):
-    p.save(); p.setRenderHint(G.QPainter.Antialiasing)
-    p.setPen(G.QPen(G.QColor('#20354d'),1.8,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
+    p.save(); p.setRenderHint(G.QPainter.Antialiasing); p.setBrush(C.Qt.NoBrush)
+    p.setPen(G.QPen(G.QColor('#263b50'),1.15,C.Qt.SolidLine,C.Qt.RoundCap,C.Qt.RoundJoin))
     if kind=='paste':
         p.setBrush(G.QColor('#e4edf8')); p.drawRoundedRect(C.QRectF(5,5,14,17),2,2)
         p.setBrush(G.QColor('#ffffff')); p.drawRoundedRect(C.QRectF(8,2,8,5),1,1)
@@ -99,13 +96,19 @@ def draw_action(p,kind):
         p.drawEllipse(C.QPointF(6,18),3,3); p.drawEllipse(C.QPointF(17,18),3,3)
         p.drawLine(8,16,18,3); p.drawLine(15,16,5,3)
     elif kind=='brush':
-        p.setBrush(G.QColor('#d8b17a')); p.drawPolygon(G.QPolygonF([C.QPointF(8,13),C.QPointF(17,2),C.QPointF(21,5),C.QPointF(12,17)]))
-        p.setBrush(G.QColor('#568fc9')); path=G.QPainterPath(); path.moveTo(8,12); path.cubicTo(3,12,7,19,2,22); path.cubicTo(13,23,15,16,12,15); path.closeSubpath(); p.drawPath(path)
+        p.setBrush(C.Qt.NoBrush)
+        p.drawPolygon(G.QPolygonF([C.QPointF(9,15),C.QPointF(18,3),C.QPointF(21,5),C.QPointF(12,17)]))
+        path=G.QPainterPath(); path.moveTo(9,14); path.cubicTo(4,14,7,19,3,21); path.cubicTo(11,22,14,17,12,16)
+        p.drawPath(path)
     elif kind=='fill':
         p.setBrush(G.QColor('#dce8f6')); p.drawPolygon(G.QPolygonF([C.QPointF(4,10),C.QPointF(11,3),C.QPointF(20,12),C.QPointF(13,19)]))
         p.drawLine(6,8,9,4); p.setBrush(G.QColor('#49a5e6')); p.drawEllipse(C.QPointF(20,19),2,3)
+    elif kind=='eraser':
+        p.setBrush(C.Qt.NoBrush); p.drawPolygon(G.QPolygonF([C.QPointF(4,15),C.QPointF(13,4),C.QPointF(21,11),C.QPointF(13,21),C.QPointF(10,21)])); p.drawLine(9,10,17,17)
+    elif kind=='picker':
+        p.drawPolygon(G.QPolygonF([C.QPointF(4,17),C.QPointF(16,5),C.QPointF(19,8),C.QPointF(7,20),C.QPointF(3,21)])); p.drawLine(13,4,20,11)
     elif kind=='select':
-        p.setPen(G.QPen(G.QColor('#20354d'),1.5,C.Qt.DashLine)); p.drawRect(C.QRectF(3,4,18,16))
+        p.setPen(G.QPen(G.QColor('#263b50'),1.0,C.Qt.DashLine)); p.drawRect(C.QRectF(3,4,18,16))
     elif kind=='line':p.drawLine(3,20,21,3)
     elif kind=='rect':p.drawRect(C.QRectF(3,5,18,14))
     elif kind=='ellipse':p.drawEllipse(C.QRectF(3,4,18,16))
@@ -137,24 +140,22 @@ def action_icon(kind):return G.QIcon(VectorIcon(kind))
 def paint_glass(p,rect,highlight=None):
     p.setRenderHint(G.QPainter.Antialiasing)
     bounds=C.QRectF(rect).adjusted(.8,.8,-.8,-.8)
-    radius=min(22.,bounds.height()/2)
+    radius=min(5.,bounds.height()/2)
     path=G.QPainterPath(); path.addRoundedRect(bounds,radius,radius)
     p.save(); p.setClipPath(path)
     gradient=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft())
     gradient.setColorAt(0,G.QColor(255,255,255,90)); gradient.setColorAt(.44,G.QColor(246,251,255,28)); gradient.setColorAt(1,G.QColor(228,240,255,52))
     p.fillPath(path,gradient)
-    glow=G.QRadialGradient(highlight or C.QPointF(bounds.width()*.23,0),max(90.,bounds.height()*2))
-    glow.setColorAt(0,G.QColor(255,255,255,75)); glow.setColorAt(1,G.QColor(255,255,255,0)); p.fillPath(path,glow)
     p.restore()
     rim=G.QLinearGradient(bounds.topLeft(),bounds.bottomLeft()); rim.setColorAt(0,G.QColor(255,255,255,235)); rim.setColorAt(.5,G.QColor(255,255,255,100)); rim.setColorAt(1,G.QColor(167,199,231,160))
     p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QBrush(rim),1.1)); p.drawPath(path)
-    p.setPen(G.QPen(G.QColor(255,255,255,95),.6)); p.drawRoundedRect(bounds.adjusted(1.6,1.6,-1.6,-1.6),max(1,radius-1.6),max(1,radius-1.6))
+
 
 class GlassPanel(W.QWidget):
     def __init__(self,*args,**kwargs):
         super().__init__(*args,**kwargs)
         self.setAttribute(C.Qt.WA_TranslucentBackground,W.QApplication.platformName()!='windows'); self.setAttribute(C.Qt.WA_NoSystemBackground,True); self.setAutoFillBackground(False)
-        self.glass_backend='pending'; self.glass_light=None; self.setMouseTracking(True)
+        self.glass_backend='pending'; self.glass_light=None
     def showEvent(self,event):
         super().showEvent(event)
         if W.QApplication.platformName()!='windows':self.glass_backend='translucent'; return
@@ -165,6 +166,7 @@ class GlassPanel(W.QWidget):
             margins=Margins(-1,-1,-1,-1); dwm.DwmExtendFrameIntoClientArea(hwnd,ctypes.byref(margins))
             class Blur(ctypes.Structure):_fields_=[('flags',wintypes.DWORD),('enabled',wintypes.BOOL),('region',wintypes.HRGN),('transition',wintypes.BOOL)]
             blur=Blur(1,True,None,False); dwm.DwmEnableBlurBehindWindow(hwnd,ctypes.byref(blur))
+            border=ctypes.c_uint(0xFFFFFFFE); dwm.DwmSetWindowAttribute(hwnd,34,ctypes.byref(border),4)
             corner=ctypes.c_int(2); dwm.DwmSetWindowAttribute(hwnd,33,ctypes.byref(corner),4)
             backdrop=ctypes.c_int(3)
             result=dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
@@ -183,12 +185,6 @@ class GlassPanel(W.QWidget):
                 else:dwm.DwmSetWindowAttribute(hwnd,38,ctypes.byref(backdrop),4)
             except (OSError,AttributeError):pass
         except (OSError,AttributeError):self.glass_backend='translucent'
-        for child in self.findChildren(W.QWidget):child.setMouseTracking(True); child.installEventFilter(self)
-    def eventFilter(self,obj,event):
-        if event.type()==C.QEvent.MouseMove:
-            self.glass_light=C.QPointF(self.mapFromGlobal(event.globalPosition().toPoint())); self.update()
-        return super().eventFilter(obj,event)
-    def mouseMoveEvent(self,event):self.glass_light=event.position(); self.update(); super().mouseMoveEvent(event)
     def paintEvent(self,event):
         painter=G.QPainter(self); painter.setCompositionMode(G.QPainter.CompositionMode_Source); painter.fillRect(self.rect(),C.Qt.transparent); painter.setCompositionMode(G.QPainter.CompositionMode_SourceOver)
         paint_glass(painter,self.rect(),getattr(self,'glass_light',None))
@@ -242,19 +238,77 @@ class CursorPalette(PalettePanelBase):
         self.animation=C.QPropertyAnimation(self,b'windowOpacity'); self.animation.setDuration(160); self.animation.setEasingCurve(C.QEasingCurve.OutCubic)
         self.refresh()
 
+class BrushChooser(GlassPanel):
+    def __init__(self,owner):
+        super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
+        self.owner=owner; self.buttons={}
+        self.setStyleSheet(STYLE+'QToolButton {border:1px solid transparent;border-radius:7px;background:transparent;} QToolButton:hover {background:rgba(30,65,110,18);border:1px solid #9bb9d8;} QToolButton:checked {background:rgba(80,150,235,65);border:1px solid #6e9fd6;}')
+        grid=W.QGridLayout(self); grid.setContentsMargins(9,9,9,9); grid.setSpacing(4)
+        for i,(kind,title) in enumerate(BRUSHES):
+            button=W.QToolButton(); button.setIcon(brush_icon(kind)); button.setIconSize(C.QSize(56,36)); button.setFixedSize(62,44); button.setCheckable(True); button.setToolTip(title)
+            button.clicked.connect(lambda checked=False,k=kind:self.choose(k)); grid.addWidget(button,i//3,i%3); self.buttons[kind]=button
+        self.adjustSize()
+    def choose(self,kind):
+        self.owner.set_value('brush_kind',kind); self.owner.select_tool('brush'); self.hide()
+    def reveal(self,position):
+        for kind,button in self.buttons.items():button.setChecked(kind==self.owner.cfg['brush_kind'])
+        screen=G.QGuiApplication.screenAt(position) or G.QGuiApplication.primaryScreen(); area=screen.availableGeometry()
+        self.move(max(area.left(),min(position.x(),area.right()-self.width())),max(area.top(),min(position.y(),area.bottom()-self.height())))
+        self.show(); self.raise_()
+
+class TextEditor(GlassPanel):
+    def __init__(self,owner,anchor):
+        super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint)
+        self.owner=owner; self.anchor=anchor; self.setStyleSheet(STYLE)
+        layout=W.QVBoxLayout(self); layout.setContentsMargins(9,9,9,9); layout.setSpacing(6)
+        row=W.QHBoxLayout(); layout.addLayout(row)
+        self.family=W.QFontComboBox(); self.family.setCurrentFont(G.QFont('Segoe UI')); self.family.setFixedWidth(170); row.addWidget(self.family)
+        self.size=W.QSpinBox(); self.size.setRange(6,144); self.size.setValue(20); self.size.setSuffix(' pt'); row.addWidget(self.size)
+        self.bold=W.QPushButton('B'); self.bold.setCheckable(True); self.bold.setFixedWidth(32); row.addWidget(self.bold)
+        self.edit=W.QTextEdit(); self.edit.setAcceptRichText(False); self.edit.setPlaceholderText('Введите текст…'); self.edit.setStyleSheet('background:rgba(255,255,255,110);border:1px solid #a7bbd4;border-radius:5px;color:'+owner.cfg['color']+';'); self.edit.setMinimumSize(350,140); layout.addWidget(self.edit)
+        row=W.QHBoxLayout(); layout.addLayout(row)
+        label=W.QLabel('Ctrl+Enter — готово · Esc — отмена'); label.setStyleSheet('font-size:9pt;'); row.addWidget(label)
+        done=W.QPushButton('Готово'); done.clicked.connect(lambda:owner.finish_text(True)); row.addWidget(done)
+        for signal in (self.family.currentFontChanged,self.size.valueChanged,self.bold.toggled):signal.connect(self.update_font)
+        self.update_font()
+        self.accept_key=G.QShortcut(G.QKeySequence('Ctrl+Return'),self); self.accept_key.activated.connect(lambda:owner.finish_text(True))
+        self.cancel_key=G.QShortcut(G.QKeySequence('Escape'),self); self.cancel_key.activated.connect(lambda:owner.finish_text(False))
+        self.capture_key=G.QShortcut(G.QKeySequence('Ctrl+Alt+S'),self); self.capture_key.activated.connect(owner.screenshot)
+        self.adjustSize()
+    def current_font(self):
+        font=G.QFont(self.family.currentFont()); font.setPointSize(self.size.value()); font.setBold(self.bold.isChecked()); return font
+    def update_font(self,*args):
+        font=self.current_font(); self.edit.setFont(font); self.edit.document().setDefaultFont(font)
+        cursor=G.QTextCursor(self.edit.document()); cursor.select(G.QTextCursor.Document)
+        fmt=G.QTextCharFormat(); fmt.setFont(font); cursor.mergeCharFormat(fmt); self.edit.setCurrentFont(font)
+    def closeEvent(self,event):
+        event.ignore(); self.owner.finish_text(True)
+
+class CaptureToast(GlassPanel):
+    def __init__(self):
+        super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
+        self.setStyleSheet(STYLE); layout=W.QVBoxLayout(self); layout.setContentsMargins(16,10,16,10)
+        self.title=W.QLabel('Скриншот сохранён'); self.title.setStyleSheet('font-weight:600;'); layout.addWidget(self.title)
+        self.details=W.QLabel(); layout.addWidget(self.details)
+        self.timer=C.QTimer(self); self.timer.setSingleShot(True); self.timer.timeout.connect(self.hide)
+    def notify(self,screen):
+        number=G.QGuiApplication.screens().index(screen)+1
+        self.details.setText('Скопирован в буфер · Монитор '+str(number)); self.adjustSize()
+        area=screen.availableGeometry(); self.move(area.right()-self.width()-18,area.bottom()-self.height()-18); self.show(); self.raise_(); self.timer.start(2800)
+
 class HUD(GlassPanel):
     def __init__(self,owner):
         super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
         self.owner=owner
         self.ui_scale=1.6
-        self.setFixedSize(round(675*self.ui_scale),round(48*self.ui_scale))
+        self.setFixedSize(round(562*self.ui_scale),round(48*self.ui_scale))
         self.swatches=[['#000000','#7f7f7f','#880015','#ed1c24','#ff7f27','#fff200','#22b14c','#00a2e8','#3f48cc','#a349a4'],['#ffffff','#c3c3c3','#b97a57','#ffaec9','#ffc90e','#efe4b0','#b5e61d','#99d9ea','#7092be','#c8bfe7'],['#24334c','#476385','#6b91b8','#77bfa3','#e47856','#e7b66a','#8e78bb','#78b6c8','#b6c4d8','#e6ebf2']]
         self.tool_buttons={}; self.colors={}; self.hotspots=[]
-        self.setStyleSheet('QPushButton {border:0;background:transparent;padding:0;border-radius:8px;} QPushButton:hover {background:rgba(255,255,255,130);border:1px solid rgba(255,255,255,220);} QPushButton:pressed {background:rgba(130,190,250,100);}')
+        self.setStyleSheet('QPushButton {border:0;background:transparent;padding:0;border-radius:8px;} QPushButton:hover {background:rgba(30,65,110,18);border:1px solid rgba(70,110,160,90);} QPushButton:pressed {background:rgba(130,190,250,100);}')
         def hit(rect,tip,callback=None,key=None):
             button=W.QPushButton(self); button.setGeometry(*(round((v+12 if i==0 else v)*self.ui_scale) for i,v in enumerate(rect))); button.setToolTip(tip); button.setAccessibleName(tip)
             if callback:button.clicked.connect(callback)
-            else:button.setToolTip(tip+' — пока недоступно'); button.setProperty('unavailable',True)
+            else:button.setToolTip(tip+' — пока недоступно'); button.setProperty('unavailable',True); button.setEnabled(False)
             if key:
                 button.setCheckable(True); self.tool_buttons[key]=button
             self.hotspots.append(button)
@@ -262,15 +316,15 @@ class HUD(GlassPanel):
         hit((1,1,23,33),'Вставить · Ctrl+V',owner.prepare_paste)
         hit((25,1,26,11),'Вырезать · Ctrl+X',lambda:owner.copy_selection(True))
         hit((25,13,26,11),'Копировать · Ctrl+C',owner.copy_selection)
-        hit((55,1,22,33),'Выделение',lambda:owner.select_tool('select'),'select')
+        hit((55,1,22,33),'Выделение · S',lambda:owner.select_tool('select'),'select')
         for rect,title in [((78,1,34,11),'Обрезать'),((78,12,34,11),'Изменить размер'),((78,23,34,11),'Повернуть')]:hit(rect,title)
-        hit((118,2,13,16),'Кисть',lambda:owner.select_tool('brush'),'brush')
+        hit((118,2,13,16),'Кисть · B',lambda:owner.select_tool('brush'),'brush')
         hit((131,2,13,16),'Заливка',lambda:owner.select_tool('fill'),'fill')
-        hit((144,2,12,16),'Текст')
-        hit((118,18,13,15),'Ластик',lambda:owner.select_tool('eraser'),'eraser')
-        hit((131,18,13,15),'Пипетка',owner.pick_color)
+        hit((144,2,12,16),'Текст · T',lambda:owner.select_tool('text'),'text')
+        hit((118,18,13,15),'Ластик · E',lambda:owner.select_tool('eraser'),'eraser')
+        hit((131,18,13,15),'Пипетка',owner.pick_color,'picker')
         hit((144,18,12,15),'Масштаб')
-        hit((159,1,24,33),'Кисть',lambda:owner.select_tool('brush'))
+        hit((159,1,24,33),'Кисти · B',self.brush_menu)
         for i in range(7):
             for j in range(3):
                 tools={(0,0):('line','Линия'),(2,0):('ellipse','Эллипс'),(3,0):('rect','Прямоугольник'),(6,0):('triangle','Треугольник')}
@@ -289,6 +343,11 @@ class HUD(GlassPanel):
         hit((496,1,22,34),'Изменить цвет',self.choose_color)
         hit((520,1,29,34),'Скриншот · Ctrl+Alt+S',owner.screenshot)
         self.animation=C.QPropertyAnimation(self,b'windowOpacity'); self.animation.setDuration(160); self.animation.setEasingCurve(C.QEasingCurve.OutCubic)
+        self.brush_popup=BrushChooser(owner)
+    def brush_menu(self):
+        self.owner.panel.dismiss(); self.owner.select_tool('brush')
+        if self.brush_popup.isVisible():self.brush_popup.hide()
+        else:self.brush_popup.reveal(self.mapToGlobal(C.QPoint(round(171*self.ui_scale),self.height()+5)))
     def size_menu(self):
         menu=W.QMenu(self)
         for key,title,values in [('width','Кисть',[1,2,3,5,8,12,16,24,32,40]),('eraser','Ластик',[4,8,12,20,28,40,56,72,88,100])]:
@@ -297,8 +356,11 @@ class HUD(GlassPanel):
                 action=sub.addAction(str(value)+' px'); action.setCheckable(True); action.setChecked(value==self.owner.cfg[key]); action.triggered.connect(lambda checked=False,k=key,v=value:self.owner.set_value(k,v))
         menu.exec(self.mapToGlobal(C.QPoint(round(325*self.ui_scale),round(34*self.ui_scale))))
     def choose_color(self):
-        color=W.QColorDialog.getColor(G.QColor(self.owner.cfg['color']),self)
-        if color.isValid():self.owner.set_value('color',color.name())
+        self.owner.set_layer_shortcuts(False)
+        try:
+            color=W.QColorDialog.getColor(G.QColor(self.owner.cfg['color']),self)
+            if color.isValid():self.owner.set_value('color',color.name())
+        finally:self.owner.set_layer_shortcuts(self.owner.overlay.shield and self.owner.text_editor is None)
     def refresh(self):
         for key,b in self.tool_buttons.items():b.setChecked(key==self.owner.drawing_tool)
         self.update()
@@ -307,20 +369,20 @@ class HUD(GlassPanel):
         p.setRenderHint(G.QPainter.Antialiasing); p.setRenderHint(G.QPainter.TextAntialiasing)
         p.scale(self.ui_scale,self.ui_scale)
         light=getattr(self,'glass_light',None)
-        paint_glass(p,C.QRectF(0,0,675,48),light/self.ui_scale if light else None)
+        paint_glass(p,C.QRectF(0,0,562,48),light/self.ui_scale if light else None)
         p.translate(12,0)
         font=G.QFont('Segoe UI'); font.setPixelSize(6); p.setFont(font)
         def text(rect,title,color='#17273d'):
             p.setPen(G.QColor(color)); p.drawText(C.QRectF(*rect),C.Qt.AlignCenter,title)
         def icon(kind,x,y,w=12,h=12):
             p.save(); p.translate(x,y); p.scale(w/24,h/24); draw_action(p,kind); p.restore()
-        for x in (53,115,157,185,311,338,383,495,519,550):
+        for x in (53,115,157,185,311,338,383,495,519):
             p.setPen(G.QPen(G.QColor(255,255,255,120),.5)); p.drawLine(C.QPointF(x,1),C.QPointF(x,44))
         for x,w,title in [(1,51,'Clipboard'),(54,60,'Image'),(116,41,'Tools'),(158,27,'Brushes'),(186,125,'Shapes'),(312,26,'Size'),(339,180,'Colors')]:text((x,36,w,9),title,'#43566f')
         # Highlight follows the selected tool, rather than a baked-in screenshot.
         selected=self.tool_buttons.get(self.owner.drawing_tool)
         if selected:
-            r=selected.geometry(); r=C.QRectF(r.x()/self.ui_scale,r.y()/self.ui_scale,r.width()/self.ui_scale,r.height()/self.ui_scale)
+            r=selected.geometry(); r=C.QRectF(r.x()/self.ui_scale-12,r.y()/self.ui_scale,r.width()/self.ui_scale,r.height()/self.ui_scale)
             p.setBrush(G.QColor(90,170,255,65)); p.setPen(G.QPen(G.QColor(255,255,255,210),.7)); p.drawRoundedRect(r.adjusted(.7,.7,-.7,-.7),4,4)
         icon('paste',5,2,15,18); text((1,22,23,8),'Paste'); text((7,29,10,5),'▾')
         icon('cut',25,2,7,8); text((32,1,19,10),'Cut')
@@ -328,14 +390,14 @@ class HUD(GlassPanel):
         icon('select',57,2,17,15); text((55,20,22,10),'Select'); text((61,28,10,5),'▾')
         for y,title,glyph in [(1,'Crop','⌗'),(12,'Resize','▱'),(23,'Rotate','↶')]:
             text((78,y,9,10),glyph,'#a4aab3'); text((86,y,28,10),title,'#9aa3ae')
-        for kind,x,y in [('brush',119,3),('fill',132,3),('select',119,20)]:icon(kind,x,y,10,10)
-        text((144,3,11,11),'A','#9aa3ae'); text((132,20,10,10),'⌖'); text((144,20,11,10),'⌕','#9aa3ae')
+        for kind,x,y in [('brush',119,3),('fill',132,3),('eraser',119,20)]:icon(kind,x,y,10,10)
+        text((144,3,11,11),'A','#20354d'); icon('picker',132,20,10,10); text((144,20,11,10),'⌕','#9aa3ae')
         icon('brush',162,2,18,19); text((159,22,24,9),'Brushes'); text((166,30,10,5),'▾')
         for i in range(7):
             for j in range(3):
                 rect=C.QRectF(190+i*10,4+j*10,7,6)
                 supported={(0,0):'line',(2,0):'ellipse',(3,0):'rect',(6,0):'triangle'}
-                kind=supported.get((i,j)); p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QColor('#243e60' if kind else '#b6c1cd'),.65))
+                kind=supported.get((i,j)); p.setBrush(C.Qt.NoBrush); p.setPen(G.QPen(G.QColor('#18334e' if kind else '#667c91'),.9 if kind else .65))
                 if kind=='line':p.drawLine(rect.topLeft(),rect.bottomRight())
                 elif kind=='ellipse':p.drawEllipse(rect)
                 elif kind=='triangle':p.drawPolygon(G.QPolygonF([C.QPointF(rect.center().x(),rect.top()),rect.bottomLeft(),rect.bottomRight()]))
@@ -358,8 +420,6 @@ class HUD(GlassPanel):
         for at,color in [(0,'#ff5252'),(.25,'#ffdf4b'),(.5,'#4ad687'),(.75,'#45b8ed'),(1,'#ab68dd')]:gradient.setColorAt(at,G.QColor(color))
         p.fillRect(C.QRectF(499,3,15,15),gradient); text((496,20,22,14),'Edit\ncolors')
         icon('camera',525,3,18,18); text((520,22,29,11),'Capture')
-        font.setPixelSize(9); font.setBold(True); p.setFont(font); text((556,7,90,16),'Paint Overlay','#193c5d')
-        font.setPixelSize(6); font.setBold(False); p.setFont(font); text((556,25,90,10),'Ctrl+D · Mouse3','#7b8b9e')
     def open(self):PalettePanelBase.open(self)
     def dismiss(self):PalettePanelBase.dismiss(self)
 
@@ -368,20 +428,21 @@ class HotkeyFilter(C.QAbstractNativeEventFilter):
     def nativeEventFilter(self,event_type,message):
         from ctypes import wintypes
         msg=wintypes.MSG.from_address(int(message))
-        if msg.message==0x0312 and msg.wParam in (712,713,714,715,716,717,718,719):
+        if msg.message==0x0312 and 712<=msg.wParam<=724:
             if msg.wParam==712:self.owner.toggle_mode()
             return True,0
         return False,0
 
 class App:
     def __init__(self):
-        self.cfg=dict(color='#ff3434',width=5,eraser=28,shield=False)
+        self.cfg=dict(color='#ff3434',width=5,eraser=28,shield=False,brush_kind='round')
         try:self.cfg.update({k:v for k,v in json.loads(SETTINGS.read_text()).items() if k in self.cfg})
         except (OSError,ValueError):pass
         self.moving=False; self.resizing=False; self.resize_anchor=None; self.move_image=None; self.move_rect=None
-        self.shape_filled=False; self.drawing_tool='brush'; self.anchor=None; self.base_image=None; self.paste_image=None
+        self.shape_filled=False; self.drawing_tool='brush'; self.anchor=None; self.base_image=None
+        self.gesture=None; self.last_draw_global=None; self.last_canvas_point=None; self.text_editor=None; self.editor_wait_release=False; self.brush_points=[]
         self.enabled=True; self.previous=None; self.tool=None; self.capturing=False; self.last_screenshot=None
-        self.overlay=Overlay(); self.panel=CursorPalette(self); self.dock=HUD(self)
+        self.overlay=Overlay(); self.panel=CursorPalette(self); self.dock=HUD(self); self.capture_toast=CaptureToast()
         icon=G.QIcon(str(RESOURCE_DIR/'app.ico'))
         W.QApplication.instance().setWindowIcon(icon)
         self.tray=W.QSystemTrayIcon(icon); self.tray.setToolTip(APP)
@@ -405,58 +466,72 @@ class App:
         except OSError:pass
         if hasattr(self,'panel'):self.panel.refresh(); self.dock.refresh()
     def clear(self):
+        self.gesture=None; self.moving=False; self.base_image=None
         self.overlay.selection=None
         self.overlay.checkpoint(); self.overlay.clear(); self.previous=None; self.tool=None
     def undo(self):
+        self.gesture=None; self.base_image=None
         self.overlay.selection=None; self.moving=False
         self.overlay.undo(); self.previous=None; self.tool=None
     def redo(self):
+        self.gesture=None; self.base_image=None
         self.overlay.selection=None; self.moving=False
         self.overlay.redo(); self.previous=None; self.tool=None
+    def capture_target(self):
+        point=self.last_draw_global or G.QCursor.pos()
+        screens=G.QGuiApplication.screens()
+        return self.choose_capture_screen(screens,point)
+    @staticmethod
+    def choose_capture_screen(screens,point):
+        return next((screen for screen in screens if screen.geometry().contains(point)),screens[0])
+    def capture_screen_image(self,screen):
+        shot=screen.grabWindow(0)
+        if shot.isNull():raise RuntimeError('Не удалось захватить экран')
+        result=shot.toImage().convertToFormat(G.QImage.Format_ARGB32_Premultiplied); result.setDevicePixelRatio(1.)
+        rect=screen.geometry().translated(-self.overlay.geometry().topLeft())
+        ink=self.overlay.image.copy(rect)
+        painter=G.QPainter(result); painter.setRenderHint(G.QPainter.SmoothPixmapTransform); painter.drawImage(C.QRectF(result.rect()),ink,C.QRectF(ink.rect())); painter.end()
+        return result
     def screenshot(self):
         if self.capturing:return
-        self.capturing=True
-        visible=[w for w in (self.panel,self.dock,self.overlay) if w.isVisible()]
+        if self.text_editor is not None:self.finish_text(True)
+        self.capturing=True; target=self.capture_target()
+        visible=[w for w in (self.panel,self.dock,self.dock.brush_popup,self.capture_toast,self.overlay) if w.isVisible()]
         for widget in visible:widget.hide()
         def capture():
+            filename=None
             try:
-                result=G.QImage(self.overlay.size(),G.QImage.Format_ARGB32_Premultiplied); result.fill(C.Qt.black)
-                painter=G.QPainter(result)
-                for screen in G.QGuiApplication.screens():
-                    shot=screen.grabWindow(0)
-                    if shot.isNull():raise RuntimeError('Не удалось захватить экран')
-                    rect=screen.geometry().translated(-self.overlay.geometry().topLeft())
-                    painter.drawPixmap(rect,shot)
-                painter.drawImage(0,0,self.overlay.image); painter.end()
-                folder=Path(C.QStandardPaths.writableLocation(C.QStandardPaths.PicturesLocation))/APP
-                folder.mkdir(parents=True,exist_ok=True)
+                result=self.capture_screen_image(target)
+                W.QApplication.clipboard().setImage(result)
+                folder=Path(C.QStandardPaths.writableLocation(C.QStandardPaths.PicturesLocation))/APP; folder.mkdir(parents=True,exist_ok=True)
                 filename=folder/('Paint Overlay '+C.QDateTime.currentDateTime().toString('yyyy-MM-dd HH-mm-ss-zzz')+'.png')
                 if not result.save(str(filename),'PNG'):raise RuntimeError('Не удалось сохранить файл')
                 self.last_screenshot=filename
-                self.tray.showMessage(APP,'Скриншот сохранён: '+str(filename),W.QSystemTrayIcon.Information,5000)
+                self.tray.showMessage(APP,'Скриншот сохранён и скопирован в буфер',W.QSystemTrayIcon.Information,3000)
             except Exception as error:W.QMessageBox.warning(None,APP,str(error))
             finally:
-                for widget in reversed(visible):widget.show(); widget.raise_()
+                for widget in reversed(visible):
+                    if widget is not self.capture_toast:widget.show(); widget.raise_()
                 self.capturing=False
+            if filename is not None and self.last_screenshot==filename:self.capture_toast.notify(target)
         C.QTimer.singleShot(150,capture)
     def enable(self,value):self.enabled=value; self.previous=None; self.apply_mode()
+    def set_layer_shortcuts(self,active):
+        self.layer_shortcuts_active=active
+        for ident in range(713,725):u.UnregisterHotKey(None,ident)
+        if active:
+            for ident,vk,mods in ((713,0x5A,0x4002),(714,0x5A,0x4006),(715,0x43,0x4002),(716,0x56,0x4002),(717,0x58,0x4002),(718,0x2E,0x4000),(719,0x1B,0x4000),(720,0x42,0x4000),(721,0x45,0x4000),(722,0x53,0x4000),(723,0x54,0x4000),(724,0x41,0x4002)):u.RegisterHotKey(None,ident,mods,vk)
     def apply_mode(self):
         shield=self.cfg['shield'] and self.enabled
-        for ident in (715,716,717,718,719):u.UnregisterHotKey(None,ident)
-        u.UnregisterHotKey(None,713); u.UnregisterHotKey(None,714)
-        if shield:
-            for ident,vk in ((715,0x43),(716,0x56),(717,0x58)):u.RegisterHotKey(None,ident,0x4002,vk)
-            u.RegisterHotKey(None,718,0x4000,0x2E)
-            u.RegisterHotKey(None,719,0x4000,0x1B)
-            u.RegisterHotKey(None,713,0x4002,0x5A)
-            u.RegisterHotKey(None,714,0x4006,0x5A)
+        if not shield and self.text_editor is not None:self.finish_text(True,refresh=False)
+        self.set_layer_shortcuts(shield and self.text_editor is None)
         self.previous=None; self.tool=None
         self.overlay.setWindowFlag(C.Qt.WindowTransparentForInput,not shield); self.overlay.shield=shield
         self.overlay.setCursor(C.Qt.CrossCursor if shield else C.Qt.ArrowCursor); self.overlay.show(); self.overlay.update()
         if shield:
             area=(G.QGuiApplication.screenAt(G.QCursor.pos()) or G.QGuiApplication.primaryScreen()).availableGeometry()
             self.dock.move(area.center().x()-self.dock.width()//2,area.top()+14); self.dock.open()
-        else:self.dock.dismiss(); self.panel.dismiss()
+        else:self.dock.dismiss(); self.panel.dismiss(); self.dock.brush_popup.hide(); self.overlay.selection=None; self.overlay.update()
         if self.panel.isVisible():self.panel.raise_()
     def toggle_mode(self):self.set_value('shield',not self.cfg['shield']); self.panel.dismiss(); self.apply_mode()
     def leave_layer(self):
@@ -466,7 +541,7 @@ class App:
         if self.panel.isVisible():self.panel.dismiss(); return
         pos=G.QCursor.pos(); area=(G.QGuiApplication.screenAt(pos) or G.QGuiApplication.primaryScreen()).availableGeometry()
         self.panel.move(max(area.left(),min(pos.x()+14,area.right()-self.panel.width())),max(area.top(),min(pos.y()+14,area.bottom()-self.panel.height())))
-        self.panel.open()
+        self.dock.brush_popup.hide(); self.panel.open()
     def edge(self,name,value):
         old=self.keys.get(name,False); self.keys[name]=value
         return value and not old
@@ -483,21 +558,35 @@ class App:
             self.repeat_at=now+60
     def set_shape_fill(self,value):self.shape_filled=value
     def pick_color(self):
-        self.drawing_tool='picker'
+        self.select_tool('picker')
     def select_tool(self,key):
-        self.drawing_tool=key; self.previous=None; self.anchor=None
+        if self.text_editor is not None:self.finish_text(True)
+        if key!='select':self.overlay.selection=None; self.overlay.update()
+        self.drawing_tool=key; self.previous=None; self.anchor=None; self.gesture=None
+        self.overlay.setCursor(C.Qt.IBeamCursor if key=='text' else C.Qt.CrossCursor)
         self.dock.refresh()
+    def select_all(self):
+        self.select_tool('select'); self.overlay.selection=C.QRectF(self.overlay.image.rect()); self.overlay.update()
     def prepare_paste(self):
         image=W.QApplication.clipboard().image()
-        if not image.isNull():self.paste_image=image
+        if image.isNull():return
+        if image.width()>self.overlay.width() or image.height()>self.overlay.height():image=image.scaled(self.overlay.size(),C.Qt.KeepAspectRatio,C.Qt.SmoothTransformation)
+        cursor=C.QPointF(self.overlay.mapFromGlobal(G.QCursor.pos()))
+        if any(w.isVisible() and w.frameGeometry().contains(G.QCursor.pos()) for w in (self.panel,self.dock)):
+            cursor=self.last_canvas_point or C.QPointF(40,100)
+        cursor=C.QPointF(max(0,min(cursor.x(),self.overlay.width()-image.width())),max(0,min(cursor.y(),self.overlay.height()-image.height())))
+        self.overlay.checkpoint(); painter=G.QPainter(self.overlay.image); painter.drawImage(cursor,image); painter.end()
+        self.select_tool('select'); self.overlay.selection=C.QRectF(cursor,C.QSizeF(image.size())); self.overlay.update(); self.last_draw_global=self.overlay.mapToGlobal(cursor.toPoint())
     def copy_selection(self,cut=False):
         if not self.overlay.selection:return
         rect=self.overlay.selection.toAlignedRect().intersected(self.overlay.image.rect())
         W.QApplication.clipboard().setImage(self.overlay.image.copy(rect))
         if cut:
-            self.overlay.checkpoint(); painter=G.QPainter(self.overlay.image); painter.setCompositionMode(G.QPainter.CompositionMode_Clear); painter.fillRect(rect,C.Qt.transparent); painter.end(); self.overlay.update()
+            self.delete_selection()
     def delete_selection(self):
         if not self.overlay.selection:return
+        self.gesture=None; self.previous=None; self.moving=False
+        self.last_draw_global=self.overlay.mapToGlobal(self.overlay.selection.center().toPoint())
         self.overlay.checkpoint()
         painter=G.QPainter(self.overlay.image); painter.setCompositionMode(G.QPainter.CompositionMode_Clear); painter.fillRect(self.overlay.selection,C.Qt.transparent); painter.end()
         self.overlay.selection=None; self.overlay.update()
@@ -527,69 +616,137 @@ class App:
         ImageDraw.floodfill(pil,(int(point.x()),int(point.y())),G.QColor(self.cfg['color']).getRgb(),thresh=32)
         raw=pil.tobytes(); self.overlay.image=G.QImage(raw,pil.width,pil.height,pil.width*4,G.QImage.Format_RGBA8888).convertToFormat(G.QImage.Format_ARGB32_Premultiplied)
         self.overlay.update()
+    def open_text(self,point):
+        self.panel.dismiss(); self.dock.brush_popup.hide()
+        self.text_editor=TextEditor(self,point); self.editor_wait_release=True
+        self.apply_mode()
+        position=self.overlay.mapToGlobal(point.toPoint()); screen=G.QGuiApplication.screenAt(position) or G.QGuiApplication.primaryScreen(); area=screen.availableGeometry()
+        editor=self.text_editor
+        editor.move(max(area.left(),min(position.x(),area.right()-editor.width())),max(area.top(),min(position.y(),area.bottom()-editor.height())))
+        editor.show(); editor.raise_(); editor.activateWindow(); editor.edit.setFocus()
+    def finish_text(self,commit,refresh=True):
+        editor=self.text_editor
+        if editor is None:return
+        self.text_editor=None; editor.hide()
+        text=editor.edit.toPlainText()
+        if commit and text.strip():
+            document=G.QTextDocument(); document.setDocumentMargin(0); document.setDefaultFont(editor.current_font()); document.setPlainText(text); document.setTextWidth(editor.edit.viewport().width())
+            cursor=G.QTextCursor(document); cursor.select(G.QTextCursor.Document); fmt=G.QTextCharFormat(); fmt.setForeground(G.QColor(self.cfg['color'])); cursor.mergeCharFormat(fmt)
+            self.overlay.checkpoint(); painter=G.QPainter(self.overlay.image); painter.translate(editor.anchor); document.drawContents(painter); painter.end()
+            self.drawing_tool='select'; self.overlay.selection=C.QRectF(editor.anchor,document.size()); self.last_draw_global=self.overlay.mapToGlobal(editor.anchor.toPoint()); self.overlay.update()
+        editor.deleteLater(); self.gesture=None; self.previous=None
+        self.dock.refresh()
+        if refresh:self.apply_mode()
+    def selection_hit(self,point):
+        rect=self.overlay.selection
+        if not rect:return None
+        points={'nw':rect.topLeft(),'ne':rect.topRight(),'sw':rect.bottomLeft(),'se':rect.bottomRight(),'n':C.QPointF(rect.center().x(),rect.top()),'s':C.QPointF(rect.center().x(),rect.bottom()),'w':C.QPointF(rect.left(),rect.center().y()),'e':C.QPointF(rect.right(),rect.center().y())}
+        for name,handle in points.items():
+            if abs(point.x()-handle.x())<=6 and abs(point.y()-handle.y())<=6:return name
+        return 'move' if rect.contains(point) else None
+    def canvas_input(self,point,down,right=False,shift=False):
+        if not down:
+            if self.gesture=='select' and self.overlay.selection is not None and (self.overlay.selection.width()<3 or self.overlay.selection.height()<3):self.overlay.selection=None; self.overlay.update()
+            self.gesture=None; self.previous=None; self.moving=False
+            return
+        point=C.QPointF(max(0,min(point.x(),self.overlay.width()-1)),max(0,min(point.y(),self.overlay.height()-1)))
+        self.last_canvas_point=point
+        wanted='eraser' if right or self.drawing_tool=='eraser' else self.drawing_tool
+        fresh=self.gesture is None
+        if fresh:
+            self.panel.dismiss(); self.dock.brush_popup.hide(); self.anchor=point; self.previous=point; self.moving=False; self.brush_points=[point]
+            if wanted=='text':self.open_text(point); return
+            if wanted=='select':
+                hit=self.selection_hit(point)
+                if hit:
+                    self.gesture=hit; self.overlay.checkpoint(); self.move_rect=C.QRectF(self.overlay.selection.toAlignedRect()); self.move_image=self.overlay.image.copy(self.move_rect.toAlignedRect()); self.base_image=G.QImage(self.overlay.image)
+                    painter=G.QPainter(self.base_image); painter.setCompositionMode(G.QPainter.CompositionMode_Clear); painter.fillRect(self.move_rect,C.Qt.transparent); painter.end()
+                else:self.gesture='select'; self.overlay.selection=None
+            else:
+                self.overlay.selection=None; self.gesture=wanted
+                if wanted!='picker':self.overlay.checkpoint()
+                self.base_image=G.QImage(self.overlay.image)
+        gesture=self.gesture
+        if gesture=='select':
+            delta=point-self.anchor
+            if shift:
+                size=max(abs(delta.x()),abs(delta.y())); delta=C.QPointF(math.copysign(size,delta.x()),math.copysign(size,delta.y()))
+            self.overlay.selection=C.QRectF(self.anchor,self.anchor+delta).normalized().intersected(C.QRectF(self.overlay.rect())); self.overlay.update()
+        elif gesture in ('move','nw','ne','sw','se','n','s','w','e'):
+            if gesture=='move':
+                target=self.move_rect.translated(point-self.anchor)
+                target.moveLeft(max(0,min(target.left(),self.overlay.width()-target.width()))); target.moveTop(max(0,min(target.top(),self.overlay.height()-target.height())))
+            else:
+                target=C.QRectF(self.move_rect)
+                if 'w' in gesture:target.setLeft(point.x())
+                if 'e' in gesture:target.setRight(point.x())
+                if 'n' in gesture:target.setTop(point.y())
+                if 's' in gesture:target.setBottom(point.y())
+                target=target.normalized()
+                if target.width()<1 or target.height()<1:return
+            self.overlay.image=G.QImage(self.base_image); painter=G.QPainter(self.overlay.image); painter.setRenderHint(G.QPainter.SmoothPixmapTransform); painter.drawImage(target,self.move_image); painter.end()
+            self.overlay.selection=target; self.overlay.update(); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+        elif gesture=='brush':
+            if fresh or point!=self.previous:
+                kind=self.cfg['brush_kind']
+                if kind in ('marker','watercolor'):
+                    if not fresh:self.brush_points.append(point)
+                    self.overlay.image=G.QImage(self.base_image)
+                    points=self.brush_points
+                    if len(points)==1:brush_segment(self.overlay.image,point,point,self.cfg['color'],self.cfg['width'],kind)
+                    for a,b in zip(points,points[1:]):brush_segment(self.overlay.image,a,b,self.cfg['color'],self.cfg['width'],kind)
+                else:brush_segment(self.overlay.image,self.previous,point,self.cfg['color'],self.cfg['width'],kind)
+                self.overlay.update(); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+        elif gesture=='eraser':
+            self.overlay.segment(self.previous,point,self.cfg['color'],self.cfg['eraser'],True); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+        elif gesture=='fill':
+            if fresh:self.bucket(point); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+        elif gesture=='picker':
+            if fresh:
+                color=self.overlay.image.pixelColor(point.toPoint())
+                if color.alpha():self.set_value('color',color.name())
+                self.drawing_tool='brush'; self.dock.refresh()
+        else:
+            self.overlay.image=G.QImage(self.base_image); self.shape(self.anchor,point,shift); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+        self.previous=point
     def tick(self):
-        if self.capturing:return
+        if self.capturing or W.QApplication.activeModalWidget() is not None:return
         key=lambda k:bool(u.GetAsyncKeyState(k)&0x8000)
+        if self.text_editor is not None:
+            if not key(1):self.editor_wait_release=False
+            if key(1) and not self.editor_wait_release and not self.text_editor.frameGeometry().contains(G.QCursor.pos()):self.finish_text(True)
+            return
         modifier=key(0x11) and key(0x12)
-        self.repeat_history('redo' if key(0x10) else 'undo', key(0x11) and key(0x5A))
+        self.repeat_history('redo' if key(0x10) else 'undo',key(0x11) and key(0x5A))
         if self.edge('clear',modifier and key(0x08)):self.clear()
         if self.edge('clear_layer',modifier and key(0x45)) and self.overlay.shield:self.clear()
         if self.edge('shot',modifier and key(0x53)):self.screenshot(); return
         if self.edge('panel',key(4)) and self.overlay.shield:self.toggle_panel()
         if self.edge('mode',modifier and key(0x44)):self.toggle_mode()
         if self.edge('esc',key(0x1b)):
-            self.panel.dismiss()
-            if self.overlay.selection:self.overlay.selection=None; self.overlay.update()
+            if self.dock.brush_popup.isVisible():self.dock.brush_popup.hide()
+            elif self.panel.isVisible():self.panel.dismiss()
+            elif self.overlay.selection:self.overlay.selection=None; self.overlay.update()
             else:self.leave_layer()
         if self.overlay.shield:
+            bare=not key(0x11) and not key(0x12)
+            for vk,tool in ((0x42,'brush'),(0x45,'eraser'),(0x53,'select'),(0x54,'text')):
+                if self.edge('tool'+str(vk),bare and key(vk)):self.select_tool(tool)
+            if self.edge('all',key(0x11) and key(0x41)):self.select_all()
             if self.edge('delete',key(0x2E)):self.delete_selection()
             if self.edge('copy',key(0x11) and key(0x43)):self.copy_selection()
             if self.edge('cut',key(0x11) and key(0x58)):self.copy_selection(True)
-            if self.edge('paste',key(0x11) and key(0x56)):
-                image=W.QApplication.clipboard().image()
-                if not image.isNull():self.paste_image=image
-        pos=G.QCursor.pos()
-        over_ui=any(w.isVisible() and w.frameGeometry().contains(pos) for w in (self.panel,self.dock))
-        shield=self.overlay.shield
-        tool=('eraser' if key(2) else (('eraser' if self.drawing_tool=='eraser' else 'brush') if key(1) else None)) if shield else None
-        if self.tool=='paste' and key(1):return
-        if not self.enabled or over_ui or W.QWidget.mouseGrabber() is not None:tool=None
-        if tool:
-            point=C.QPointF(self.overlay.mapFromGlobal(pos))
-            fresh=self.previous is None or self.tool!=tool
-            if fresh:
-                self.panel.dismiss(); self.overlay.checkpoint(); self.anchor=point; self.base_image=G.QImage(self.overlay.image)
-                self.moving=False; self.resizing=False
-                corner=None
-                if self.drawing_tool=='select' and self.overlay.selection:
-                    r=self.overlay.selection
-                    for near,opposite in [(r.topLeft(),r.bottomRight()),(r.topRight(),r.bottomLeft()),(r.bottomLeft(),r.topRight()),(r.bottomRight(),r.topLeft())]:
-                        if abs(point.x()-near.x())<=8 and abs(point.y()-near.y())<=8:corner=opposite; break
-                if self.drawing_tool=='select' and self.overlay.selection and (corner is not None or self.overlay.selection.contains(point)):
-                    self.resizing=corner is not None; self.resize_anchor=corner
-                    self.moving=True; self.move_rect=self.overlay.selection.toAlignedRect(); self.move_rect=C.QRectF(self.move_rect)
-                    self.move_image=self.overlay.image.copy(self.move_rect.toAlignedRect())
-                    painter=G.QPainter(self.base_image); painter.setCompositionMode(G.QPainter.CompositionMode_Clear); painter.fillRect(self.move_rect,C.Qt.transparent); painter.end()
-                elif self.drawing_tool=='select':self.overlay.selection=None
-                if self.paste_image is not None:
-                    painter=G.QPainter(self.overlay.image); painter.drawImage(point,self.paste_image); painter.end(); self.overlay.selection=C.QRectF(point,C.QSizeF(self.paste_image.size())); self.drawing_tool='select'; self.paste_image=None; self.overlay.update(); self.previous=point; self.tool='paste'; return
-            prev=self.previous if self.tool==tool and self.previous is not None else point
-            if tool=='eraser' or self.drawing_tool=='brush':self.overlay.segment(prev,point,self.cfg['color'],self.cfg['eraser'] if tool=='eraser' else self.cfg['width'],tool=='eraser')
-            elif self.drawing_tool=='picker':
-                if fresh:
-                    color=self.overlay.image.pixelColor(point.toPoint())
-                    if color.alpha():self.set_value('color',color.name())
-                    self.select_tool('brush')
-            elif self.drawing_tool=='fill':
-                if fresh:self.bucket(point)
-            else:
-                self.overlay.image=G.QImage(self.base_image); self.shape(self.anchor,point,key(0x10))
-            self.previous=point
-        else:
-            self.previous=None; self.moving=False
-        if shield and self.drawing_tool=='select':
-            local=C.QPointF(self.overlay.mapFromGlobal(pos)); self.overlay.setCursor(C.Qt.SizeAllCursor if self.overlay.selection and self.overlay.selection.contains(local) else C.Qt.CrossCursor)
-        self.tool=tool
+            if self.edge('paste',key(0x11) and key(0x56)):self.prepare_paste()
+        pos=G.QCursor.pos(); surfaces=(self.panel,self.dock,self.dock.brush_popup,self.capture_toast)
+        over_ui=any(w.isVisible() and w.frameGeometry().contains(pos) for w in surfaces)
+        if not self.overlay.shield or not self.enabled or over_ui or W.QWidget.mouseGrabber() is not None:
+            self.canvas_input(C.QPointF(),False); return
+        local=C.QPointF(self.overlay.mapFromGlobal(pos)); self.canvas_input(local,key(1) or key(2),key(2),key(0x10))
+        if self.drawing_tool=='select':
+            hit=self.selection_hit(local)
+            cursor={'move':C.Qt.SizeAllCursor,'nw':C.Qt.SizeFDiagCursor,'se':C.Qt.SizeFDiagCursor,'ne':C.Qt.SizeBDiagCursor,'sw':C.Qt.SizeBDiagCursor,'n':C.Qt.SizeVerCursor,'s':C.Qt.SizeVerCursor,'w':C.Qt.SizeHorCursor,'e':C.Qt.SizeHorCursor}.get(hit,C.Qt.CrossCursor)
+            self.overlay.setCursor(cursor)
+
 
 if __name__=='__main__':
     kernel=ctypes.windll.kernel32; kernel.CreateMutexW.restype=ctypes.c_void_p

@@ -63,7 +63,7 @@ class Overlay(W.QWidget):
     def paintEvent(self,event):
         p=G.QPainter(self)
         if self.shield:p.fillRect(self.rect(),G.QColor(255,255,255,2))
-        p.drawImage(0,0,self.image)
+        p.drawImage(event.rect(),self.image,event.rect())
         if self.selection:
             rect=self.selection
             p.setPen(G.QPen(G.QColor('#ffffff'),3)); p.drawRect(rect)
@@ -105,6 +105,8 @@ def draw_action(p,kind):
         p.drawLine(6,8,9,4); p.setBrush(G.QColor('#49a5e6')); p.drawEllipse(C.QPointF(20,19),2,3)
     elif kind=='eraser':
         p.setBrush(C.Qt.NoBrush); p.drawPolygon(G.QPolygonF([C.QPointF(4,15),C.QPointF(13,4),C.QPointF(21,11),C.QPointF(13,21),C.QPointF(10,21)])); p.drawLine(9,10,17,17)
+    elif kind=='text':
+        p.drawLine(4,4,20,4); p.drawLine(12,4,12,21); p.drawLine(8,21,16,21)
     elif kind=='picker':
         p.drawPolygon(G.QPolygonF([C.QPointF(4,17),C.QPointF(16,5),C.QPointF(19,8),C.QPointF(7,20),C.QPointF(3,21)])); p.drawLine(13,4,20,11)
     elif kind=='select':
@@ -269,7 +271,10 @@ class HUD(PalettePanelBase):
         super().__init__(None,C.Qt.Tool|C.Qt.FramelessWindowHint|C.Qt.WindowStaysOnTopHint|C.Qt.WindowDoesNotAcceptFocus)
         self.owner=owner; self.setStyleSheet(STYLE)
         self.colors={}; self.sliders={}; self.previews={}; self.values={}; self.actions={}; self.tool_buttons={}
-        row=W.QHBoxLayout(self); row.setContentsMargins(10,7,10,7); row.setSpacing(5)
+        row=W.QHBoxLayout(self); row.setContentsMargins(10,7,10,7); row.setSpacing(3)
+        brush=W.QPushButton(); brush.setIcon(action_icon('brush')); brush.setIconSize(C.QSize(22,22)); brush.setFixedSize(36,30); brush.setStyleSheet('padding:0;'); brush.setToolTip('Выбрать кисть · B'); brush.clicked.connect(self.brush_menu); row.addWidget(brush); self.tool_buttons['brush']=brush; brush.setCheckable(True)
+        for key,icon,title in [('eraser','eraser','Ластик · E'),('select','select','Выделение · S'),('text','text','Текст · T'),('fill','fill','Заливка'),('picker','picker','Пипетка')]:
+            button=W.QPushButton(); button.setIcon(action_icon(icon)); button.setIconSize(C.QSize(20,20)); button.setFixedSize(28,30); button.setCheckable(True); button.setStyleSheet('QPushButton {padding:0;} QPushButton:checked {background:#dceafb;border:1px solid #6096d4;}'); button.setToolTip(title); button.clicked.connect(lambda checked=False,k=key:owner.select_tool(k)); row.addWidget(button); self.tool_buttons[key]=button
         for color in COLORS:
             button=W.QPushButton(); button.setFixedSize(23,23); button.clicked.connect(lambda checked=False,c=color:owner.set_value('color',c)); row.addWidget(button); self.colors[color]=button
         for key,steps in [('width',[1,2,3,5,8,12,16,24,32,40]),('eraser',[4,8,12,20,28,40,56,72,88,100])]:
@@ -298,7 +303,9 @@ class HUD(PalettePanelBase):
             action=menu.addAction(title); action.setCheckable(True); action.setChecked(self.owner.drawing_tool==key); action.triggered.connect(lambda checked=False,k=key:self.owner.select_tool(k))
         menu.addSeparator(); menu.addAction('Тип кисти',self.brush_menu); menu.addAction('Другой цвет',self.choose_color)
         menu.exec(self.mapToGlobal(C.QPoint(self.width()-30,self.height()+4)))
-    def brush_menu(self):self.brush_popup.reveal(self.mapToGlobal(C.QPoint(self.width()-210,self.height()+4)))
+    def brush_menu(self):
+        self.owner.select_tool('brush')
+        self.brush_popup.reveal(self.mapToGlobal(C.QPoint(self.width()-210,self.height()+4)))
     def choose_color(self):
         self.owner.set_layer_shortcuts(False)
         try:
@@ -342,7 +349,7 @@ class App:
         self.hotkey_registered=bool(u.RegisterHotKey(None,712,0x4002,0x44))
         W.QApplication.instance().aboutToQuit.connect(lambda:(u.UnregisterHotKey(None,713),u.UnregisterHotKey(None,714)))
         W.QApplication.instance().aboutToQuit.connect(lambda:u.UnregisterHotKey(None,712) if self.hotkey_registered else None)
-        self.timer=C.QTimer(); self.timer.timeout.connect(self.tick); self.timer.start(8)
+        self.timer=C.QTimer(); self.timer.setTimerType(C.Qt.PreciseTimer); self.timer.timeout.connect(self.tick); self.timer.start(4)
     def set_value(self,key,value):
         self.cfg[key]=value
         try:SETTINGS.write_text(json.dumps(self.cfg))
@@ -582,6 +589,8 @@ class App:
                 if wanted!='picker':self.overlay.checkpoint()
                 self.base_image=G.QImage(self.overlay.image)
         gesture=self.gesture
+        if not fresh and point==self.previous and getattr(self,'last_shift',False)==shift:return
+        self.last_shift=shift
         if gesture=='select':
             delta=point-self.anchor
             if shift:
@@ -611,7 +620,12 @@ class App:
                     if len(points)==1:brush_segment(self.overlay.image,point,point,self.cfg['color'],self.cfg['width'],kind)
                     for a,b in zip(points,points[1:]):brush_segment(self.overlay.image,a,b,self.cfg['color'],self.cfg['width'],kind)
                 else:brush_segment(self.overlay.image,self.previous,point,self.cfg['color'],self.cfg['width'],kind)
-                self.overlay.update(); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
+                if kind in ('marker','watercolor'):self.overlay.update()
+                else:
+                    margin=max(4,self.cfg['width']*3)
+                    dirty=C.QRectF(self.previous,point).normalized().adjusted(-margin,-margin,margin,margin).toAlignedRect()
+                    self.overlay.update(dirty)
+                self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
         elif gesture=='eraser':
             self.overlay.segment(self.previous,point,self.cfg['color'],self.cfg['eraser'],True); self.last_draw_global=self.overlay.mapToGlobal(point.toPoint())
         elif gesture=='fill':
@@ -661,7 +675,7 @@ class App:
         if self.drawing_tool=='select':
             hit=self.selection_hit(local)
             cursor={'move':C.Qt.SizeAllCursor,'nw':C.Qt.SizeFDiagCursor,'se':C.Qt.SizeFDiagCursor,'ne':C.Qt.SizeBDiagCursor,'sw':C.Qt.SizeBDiagCursor,'n':C.Qt.SizeVerCursor,'s':C.Qt.SizeVerCursor,'w':C.Qt.SizeHorCursor,'e':C.Qt.SizeHorCursor}.get(hit,C.Qt.CrossCursor)
-            self.overlay.setCursor(cursor)
+            if self.overlay.cursor().shape()!=cursor:self.overlay.setCursor(cursor)
 
 
 if __name__=='__main__':
@@ -677,3 +691,4 @@ if __name__=='__main__':
             app.quit()
         C.QTimer.singleShot(500,finish)
     sys.exit(app.exec())
+

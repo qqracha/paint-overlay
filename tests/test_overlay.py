@@ -62,7 +62,7 @@ class OverlayTests(BaseOverlay):
         a=self.app
         self.assertFalse(hasattr(a.dock,'background'))
         self.assertEqual(a.dock.height(),54)
-        self.assertLess(a.dock.width(),900)
+        self.assertLess(a.dock.width(),1200)
         self.assertEqual(len(a.panel.colors),6)
         self.assertTrue(all(s.orientation()==m.C.Qt.Horizontal for s in a.panel.sliders.values()))
         a.dock.tool_buttons['ellipse'].click()
@@ -105,6 +105,20 @@ class PaintWorkflowTests(BaseOverlay):
         a.canvas_input(m.C.QPointF(10,180),True); a.canvas_input(m.C.QPointF(),False)
         self.assertIsNone(a.overlay.selection)
         self.assertGreater(a.overlay.image.pixelColor(180,80).alpha(),0)
+    def test_brush_redraws_only_its_dirty_region(self):
+        a=self.app; a.select_tool('brush'); a.cfg['brush_kind']='round'; a.cfg['width']=5
+        original=a.overlay.update; regions=[]
+        try:
+            a.overlay.update=lambda *args:regions.append(args)
+            a.canvas_input(m.C.QPointF(50,50),True)
+            a.canvas_input(m.C.QPointF(60,60),True)
+            before=len(regions); a.canvas_input(m.C.QPointF(60,60),True)
+            self.assertEqual(len(regions),before)
+            self.assertTrue(regions)
+            for args in regions:
+                self.assertEqual(len(args),1)
+                self.assertLess(args[0].width()*args[0].height(),a.overlay.width()*a.overlay.height()/10)
+        finally:a.overlay.update=original; a.canvas_input(m.C.QPointF(),False)
     def test_paste_is_immediate_and_selected(self):
         a=self.app; image=m.G.QImage(16,12,m.G.QImage.Format_ARGB32_Premultiplied); image.fill(m.G.QColor('red'))
         self.qt.clipboard().setImage(image); a.prepare_paste()
